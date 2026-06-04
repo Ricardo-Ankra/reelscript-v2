@@ -3,16 +3,16 @@ import { cookies } from 'next/headers';
 import { env } from '@/lib/env';
 
 // Server-side Supabase client (Server Components, Server Actions, Route
-// Handlers). Reads/writes the session from the request cookies. Still the anon
-// key — RLS applies — so this never bypasses account isolation. The service-role
-// client (RLS bypass) is a separate, server-only concern introduced for the
-// Inngest worker in a later phase.
+// Handlers). Reads/writes the session from the request cookies. Still the
+// publishable key — RLS applies — so this never bypasses account isolation. The
+// secret-key client (RLS bypass) is a separate, server-only concern introduced
+// for the Inngest worker in a later phase.
 export async function createClient() {
   const cookieStore = await cookies();
 
   return createServerClient(
     env.NEXT_PUBLIC_SUPABASE_URL,
-    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     {
       cookies: {
         getAll() {

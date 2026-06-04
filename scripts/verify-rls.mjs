@@ -9,12 +9,13 @@
 //      silently pass while missing a table.
 //
 //   B. Behavioural isolation (the milestone): two real accounts, exercised
-//      through the RLS-enforced anon path. Account A inserts a channel; account
-//      B cannot read it, and B cannot write a row under A's account_id.
+//      through the RLS-enforced publishable-key path. Account A inserts a
+//      channel; account B cannot read it, and B cannot write a row under A's
+//      account_id.
 //
 // Run: npm run verify:rls   (loads .env.local via node --env-file)
-// Needs: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
-//        SUPABASE_SERVICE_ROLE_KEY, SUPABASE_DB_URL
+// Needs: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+//        SUPABASE_SECRET_KEY, SUPABASE_DB_URL
 // =============================================================================
 
 import { createClient } from '@supabase/supabase-js';
@@ -22,8 +23,8 @@ import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const PUBLISHABLE = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const SECRET = process.env.SUPABASE_SECRET_KEY;
 const DB_URL = process.env.SUPABASE_DB_URL;
 
 function requireEnv(name, value) {
@@ -33,8 +34,8 @@ function requireEnv(name, value) {
   }
 }
 requireEnv('NEXT_PUBLIC_SUPABASE_URL', URL);
-requireEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', ANON);
-requireEnv('SUPABASE_SERVICE_ROLE_KEY', SERVICE);
+requireEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', PUBLISHABLE);
+requireEnv('SUPABASE_SECRET_KEY', SECRET);
 requireEnv('SUPABASE_DB_URL', DB_URL);
 
 const failures = [];
@@ -44,10 +45,11 @@ const fail = (m) => {
   console.log(`  ✗ ${m}`);
 };
 
-// A fresh anon client per user; signing in populates its in-memory session,
-// which it then uses for every subsequent request — the real RLS path.
-function anonClient() {
-  return createClient(URL, ANON, {
+// A fresh client per user, using the publishable key; signing in populates its
+// in-memory session, which it then uses for every subsequent request — the real
+// RLS path.
+function userClient() {
+  return createClient(URL, PUBLISHABLE, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
@@ -93,8 +95,8 @@ async function structuralCheck() {
 }
 
 async function behaviouralCheck() {
-  console.log('\nB. Cross-account isolation (RLS-enforced anon path)');
-  const admin = createClient(URL, SERVICE, {
+  console.log('\nB. Cross-account isolation (RLS-enforced publishable-key path)');
+  const admin = createClient(URL, SECRET, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
@@ -118,8 +120,8 @@ async function behaviouralCheck() {
     if (b.error) throw b.error;
     created.push(a.data.user.id, b.data.user.id);
 
-    const clientA = anonClient();
-    const clientB = anonClient();
+    const clientA = userClient();
+    const clientB = userClient();
     const signinA = await clientA.auth.signInWithPassword({
       email: emailA,
       password,
