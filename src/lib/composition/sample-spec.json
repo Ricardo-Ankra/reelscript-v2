@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "metadata": { "width": 1080, "height": 1920, "fps": 30, "durationInFrames": 150 },
+  "theme": {
+    "colors": {
+      "background": "#0B1F3A",
+      "foreground": "#FFFFFF",
+      "primary": "#3B82F6",
+      "secondary": "#1E3A8A",
+      "accent": "#F59E0B",
+      "bodyText": "#E2E8F0"
+    },
+    "fonts": { "display": "Poppins", "body": "Poppins", "mono": "monospace" },
+    "logos": {},
+    "motion": "standard"
+  },
+  "scenes": [
+    {
+      "id": "scene-1",
+      "durationInFrames": 90,
+      "instances": [
+        { "primitive": "FullBleed", "props": { "colorToken": "background" }, "layer": 0, "startFrame": 0, "durationInFrames": 90 },
+        { "primitive": "Shape", "props": { "shape": "rect", "colorToken": "secondary", "xPct": 0, "yPct": 76, "widthPct": 100, "heightPct": 24 }, "layer": 1, "startFrame": 0, "durationInFrames": 90 },
+        { "primitive": "Shape", "props": { "shape": "line", "colorToken": "accent", "xPct": 8, "yPct": 44, "widthPct": 26 }, "layer": 2, "startFrame": 0, "durationInFrames": 90 },
+        { "primitive": "Text", "props": { "text": "Reelscript", "colorToken": "foreground", "fontSizePx": 150, "align": "center" }, "layer": 3, "startFrame": 6, "durationInFrames": 84 }
+      ]
+    },
+    {
+      "id": "scene-2",
+      "durationInFrames": 60,
+      "instances": [
+        { "primitive": "FullBleed", "props": { "colorToken": "primary" }, "layer": 0, "startFrame": 0, "durationInFrames": 60 },
+        { "primitive": "Text", "props": { "text": "The render spine works.", "colorToken": "foreground", "fontSizePx": 90, "align": "center" }, "layer": 1, "startFrame": 4, "durationInFrames": 56 }
+      ]
+    }
+  ]
+}

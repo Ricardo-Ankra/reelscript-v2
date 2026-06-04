@@ -11,23 +11,34 @@
     "db:start": "supabase start",
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
-    "verify:rls": "node --env-file=.env.local scripts/verify-rls.mjs"
+    "verify:rls": "node --env-file=.env.local scripts/verify-rls.mjs",
+    "studio": "remotion studio remotion/index.ts",
+    "deploy:remotion": "node --env-file=.env.local scripts/deploy-remotion.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1062.0",
+    "@aws-sdk/s3-request-presigner": "^3.1062.0",
+    "@remotion/bundler": "4.0.472",
+    "@remotion/google-fonts": "4.0.472",
+    "@remotion/lambda": "4.0.472",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.107.0",
+    "inngest": "^4.5.0",
     "next": "16.2.7",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "zod": "^4.4.3"
+    "remotion": "4.0.472",
+    "zod": "4.3.6"
   },
   "devDependencies": {
+    "@remotion/cli": "4.0.472",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
+    "inngest-cli": "^1.25.0",
     "pg": "^8.21.0",
     "supabase": "^2.105.0",
     "tailwindcss": "^4",

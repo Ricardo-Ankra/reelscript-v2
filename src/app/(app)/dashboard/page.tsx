@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 
 // Phase 0 stub dashboard. Its job is to prove the spine works end-to-end:
@@ -22,6 +23,9 @@ export default async function DashboardPage() {
         <p className="text-sm opacity-70">
           Phase 0 foundations — the app shell stands up, authenticated.
         </p>
+        <Link href="/render" className="mt-2 inline-block text-sm underline">
+          Go to the render spine →
+        </Link>
       </div>
 
       <section className="space-y-2 rounded-lg border border-black/10 p-4 text-sm dark:border-white/10">
