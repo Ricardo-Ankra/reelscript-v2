@@ -59,7 +59,8 @@ authoritative and the `docs/` copy remains the design record.
 ## Working agreement
 
 - **Build strictly in the build-plan phase order. Do not jump ahead.**
-- **Current phase: Phase 0 — Foundations.**
+- **Current phase: Phase 1 — The render spine.** (Phase 0 — Foundations:
+  complete and verified, 2026-06-04.)
 - Before writing code for a phase, propose a short plan and the milestone, and
   flag any ambiguity in the docs. Build only to the current phase's milestone.
 - Day-one, even in the thin slice (cheap now, ruinous to retrofit): RLS,
