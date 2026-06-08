@@ -13,7 +13,8 @@
     "db:push": "supabase db push",
     "verify:rls": "node --env-file=.env.local scripts/verify-rls.mjs",
     "studio": "remotion studio remotion/index.ts",
-    "deploy:remotion": "node --env-file=.env.local scripts/deploy-remotion.mjs"
+    "deploy:remotion": "node --env-file=.env.local scripts/deploy-remotion.mjs",
+    "setup:r2-cors": "node --env-file=.env.local scripts/set-r2-cors.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1062.0",

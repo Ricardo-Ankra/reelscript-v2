@@ -95,6 +95,32 @@ R2_BUCKET=reelscript
 R2_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 ```
 
+### B5. Add a CORS policy to the bucket (required for rendering)
+The Remotion composition fetches the spec by signed URL **from inside the render
+browser** (`calculateReelMetadata`). That's a cross-origin browser fetch, and R2
+blocks it by default — the Lambda render dies with `TypeError: Failed to fetch`
+in `calculateMetadata`. CORS does not weaken privacy: the bucket stays private
+and a browser can only read a response it already holds a valid signed URL for.
+
+The Object-scoped API token from B2 **can't** set bucket CORS (you'll get a 403),
+so add it in the dashboard:
+1. R2 → `reelscript` bucket → **Settings** → **CORS Policy** → **Add CORS policy**.
+2. Paste and save:
+```json
+[
+  {
+    "AllowedOrigins": ["*"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag", "Content-Length"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+> `scripts/set-r2-cors.mjs` (`npm run setup:r2-cors`) applies the same policy via
+> the S3 API, but only with an **admin-scoped** R2 token. With the Object-only
+> token it returns 403 — use the dashboard.
+
 ---
 
 ## C. Inngest — orchestration
@@ -109,7 +135,15 @@ npx inngest-cli@latest dev -u http://localhost:3001/api/inngest
 
 (The app runs on port **3001** because 3000 is taken by another project. The
 Inngest dev dashboard opens at http://localhost:8288.) Leave
-`INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` blank for now.
+`INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` blank for now, but **do** set
+`INNGEST_DEV=1` in `.env.local`:
+
+```
+INNGEST_DEV=1
+```
+> Without it the SDK starts in "cloud mode" and rejects every request from the
+> dev server with a 500 ("no signing key found"). The flag is local-only; on
+> Vercel we set the real signing key instead.
 
 ### Later (production, when we deploy to Vercel)
 1. Create an account at **inngest.com** → create an app.
@@ -124,5 +158,7 @@ Inngest dev dashboard opens at http://localhost:8288.) Leave
 - [ ] `.env.local` has `REMOTION_AWS_ACCESS_KEY_ID` + `REMOTION_AWS_SECRET_ACCESS_KEY`
 - [ ] IAM role named exactly `remotion-lambda-role` exists with the role policy
 - [ ] `.env.local` has `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT`
+- [ ] R2 bucket has the B5 CORS policy applied
 - [ ] `AWS_REGION=eu-central-1` (already set)
-- [ ] Leave `REMOTION_LAMBDA_FUNCTION_NAME`, `REMOTION_SERVE_URL`, and the Inngest keys blank
+- [ ] `INNGEST_DEV=1` is set in `.env.local`
+- [ ] Leave `REMOTION_LAMBDA_FUNCTION_NAME`, `REMOTION_SERVE_URL`, and the Inngest event/signing keys blank
