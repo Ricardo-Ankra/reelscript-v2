@@ -38,6 +38,9 @@ editable shots) drop in without a card redesign.
 | Video config | **Sensible defaults baked into `video.settings`**, no form | Keeps the UI to a prompt box, matching "type a prompt." |
 | Editor layout | **Option A — single column of stacked scene cards** | The card maps 1:1 to a scene, which is the autosave boundary and (later) the audio-staleness boundary. UI unit = data unit. |
 | Generation status | **A minimal `jobs` row**, surfaced via Realtime | Error surfacing matters (Phase 1 lesson); same mechanism voice/render reuse. |
+| Per-line atomicity | **`upsert_scene_with_shots` RPC, one txn per line** | A card never appears without its shots; a mid-stream failure leaves N complete scenes. JS client can't transact two upserts. |
+| Generation temperature | **Pinned low (e.g. 0.2)** | Reduces malformed-NDJSON risk — the top risk. |
+| Config source of truth | **`video.settings` written once**, copied into the event | One authoritative source, not two independently-read ones. |
 | Audio-staleness trigger | **Deferred to Phase 3** | No-op until voice exists (only flips `synthesized` rows). |
 
 ## 3. Architecture & data flow
@@ -53,11 +56,11 @@ client router.push(`/videos/${videoId}`)
 
 Inngest generate-script function          [Tier 3, service-role admin client]
    step: mark job running
-   stream Opus (NDJSON) →
+   stream Opus (NDJSON, low temp) →
      for each completed line:
-       Zod-validate scene → upsert scene (video_id,position)
-                          → upsert shots  (scene_id,position)
-   step: mark job complete (or failed + error payload)
+       Zod-validate scene → rpc upsert_scene_with_shots(...)   [1 txn: scene + shots]
+       (malformed line → skip + increment skipped counter)
+   step: mark job complete (+ scenes-written / skipped-line counts) or failed + error
         every scene/shot/jobs write ──► Supabase Realtime ──►
 Editor (/videos/[id], client)
    subscribe postgres_changes: scenes & shots (filter video_id), jobs (filter id)
@@ -72,11 +75,18 @@ uses the RLS-protected publishable client for reads, Realtime, and autosave.
 
 ## 4. Schema / database changes
 
-**One migration** (`supabase/migrations/<ts>_phase2_realtime.sql`):
+**One migration** (`supabase/migrations/<ts>_phase2_script.sql`), two parts:
 - Add `scenes`, `shots`, and `jobs` to the `supabase_realtime` publication so
   postgres_changes events fire for them. RLS already restricts what each
   subscriber receives (rows whose `account_id` matches the authenticated user);
   no policy changes required.
+- Create a Postgres function **`upsert_scene_with_shots(...)`** that upserts one
+  scene and all of its shots in a **single transaction** (see Section 5,
+  "Per-line atomicity"). The Inngest worker calls it once per NDJSON line via
+  `rpc()`. It runs as the table owner / `security definer` with a fixed
+  `search_path`; the worker already uses the service-role client, so no
+  RLS interaction is required, but `account_id` is passed in explicitly and
+  written on both the scene and its shots.
 
 **No other schema changes.** Relevant existing structures (already applied in
 `20260604184050_init_schema.sql`):
@@ -100,14 +110,32 @@ uses the RLS-protected publishable client for reads, Realtime, and autosave.
   `required()` pattern as the rest). `ANTHROPIC_API_KEY` already exists in
   `.env.example`.
 - **Model:** a single pinned constant (latest Opus) with a `TODO` to read
-  `model_routing` when that is wired (Phase 9). Confirm the exact model id and
-  the streaming / structured-output API shape against the `claude-api` reference
-  at implementation time.
+  `model_routing` when that is wired (Phase 9).
+- **Temperature: pinned low (decided).** The generation call uses a low
+  temperature (e.g. `0.2`). This directly reduces malformed-NDJSON risk — the
+  top listed risk — by making structural output more deterministic.
+- **Verify first (external unknown).** Before building the per-line parser,
+  confirm against the `claude-api` reference whether the chosen approach is a
+  **plain text stream** (model emits NDJSON as text, we split on `\n`) versus a
+  **structured-output / tool-use** stream (which would deliver incremental tool
+  JSON, not newline-delimited text). This is the one external unknown that could
+  invalidate the per-line parsing design, so it is resolved *first* at
+  implementation time. The locked decision is NDJSON-as-text; verification
+  confirms the API shape that delivers it, and the exact model id.
+
+### Config source of truth (decided)
+Video config (aspect ratio, target length, fps, captions, music) has **one
+authoritative source: `video.settings`**, written once when the Tier-2 action
+creates the video. The same values are passed in the Inngest event payload as
+`config` purely so the worker need not re-read the row — they are the *same*
+values, not an independently-authored second source. The defaults live in one
+place (the action) and flow: defaults → `video.settings` (write once) → event
+`config` (copy) → prompt.
 
 ### Prompt
 Built from: the user prompt; the seeded channel's brand (name + optional tone
-from `brand_voice`); and the video's baked `settings` (aspect ratio, target
-length, fps). Instructions to the model:
+from `brand_voice`); and the video config from the event payload (sourced from
+`video.settings`, per "Config source of truth"). Instructions to the model:
 - Output **one JSON object per line** (NDJSON). No prose, no markdown fences.
 - Each line is one complete scene:
   `{ position, narration, durationSeconds, shots: [{ position, description, source, stockQuery? }] }`.
@@ -118,18 +146,36 @@ length, fps). Instructions to the model:
 - Consume the Anthropic text stream; maintain a buffer. On each `\n`, take the
   completed line(s), leaving any partial trailing text buffered.
 - For each completed line: parse JSON → **Zod-validate** against the scene
-  schema. On failure, log and skip the line (the job still completes).
-- **Upsert** the scene on conflict `(video_id, position)`, then upsert its shots
-  on conflict `(scene_id, position)`. Upserts make Inngest's at-least-once
-  retries converge instead of duplicating or hitting the unique constraints.
-- `account_id` for inserts comes from the event payload (the Tier-2 action knows
-  it); `video_id` from the payload; `scene_id` from the upserted scene row.
+  schema. On failure, **increment a skipped-line counter** and continue (the job
+  still completes — see "Degenerate-generation visibility" below).
+- **Per-line atomicity (decided).** A scene and *all of its shots* are written
+  **atomically, in a single transaction, per NDJSON line**, via the Postgres
+  RPC `upsert_scene_with_shots(...)` called once per valid line. This is a
+  deliberate choice over two separate `.upsert()` calls: the Supabase JS client
+  cannot wrap two client-side writes in one transaction, so a scene could appear
+  in the editor without its shots, and a mid-stream failure could leave a
+  half-written scene. With the RPC, a card never appears without its shots, and a
+  mid-stream failure leaves **N complete scenes**, never a scene with missing
+  shots. The function upserts the scene on conflict `(video_id, position)` and
+  its shots on conflict `(scene_id, position)` inside the transaction, so
+  Inngest's at-least-once retries converge instead of duplicating.
+- `account_id` and `video_id` come from the event payload; `scene_id` is
+  resolved inside the RPC.
+
+### Degenerate-generation visibility (decided)
+A job that completes after skipping many malformed lines currently reads as a
+success even if it produced three scenes from a ten-scene intent. To make this
+diagnosable rather than silent, the function records a **count of
+skipped/malformed lines** (and the count of scenes written) in the job's
+`error`/metadata JSON on completion — one field, the down payment on Phase 9
+observability. A clean run records zero.
 
 ### Status & errors
 - The Tier-2 action creates the `jobs` row (`queued`).
-- The function sets `running` at start, `complete` at the end, or `failed` with
-  an `error` payload on a terminal error. This row is the single source of truth
-  for progress/outcome and is delivered to the editor over Realtime.
+- The function sets `running` at start, `complete` at the end (with the
+  skipped-line/scene-count metadata), or `failed` with an `error` payload on a
+  terminal error. This row is the single source of truth for progress/outcome
+  and is delivered to the editor over Realtime.
 
 ## 6. Editor (Option A)
 
@@ -150,12 +196,23 @@ length, fps). Instructions to the model:
   - **Unmistakable card separation** so editing reads as discrete per-scene.
   - **Strict 1:1**: a card edits exactly its own scene; nothing cross-card.
 
-### Realtime echo handling
+### Realtime ordering (explicit)
+The editor **sorts scenes by `position` on render** — it does not append rows in
+arrival order. Realtime INSERT delivery is **not** position-ordered, so
+append-on-arrival would show scenes out of sequence; this is the natural thing to
+code wrong, so it is called out. Incoming rows are merged into a keyed map and
+the render sorts by `position` every time. Shots likewise render sorted by their
+`position` within a scene.
+
+### Realtime echo handling (echo-guard)
 During generation the editor only receives INSERTs, so there is no conflict with
-user edits. For user edits, local state is authoritative for the focused/dirty
-card: ignore Realtime UPDATEs for a card that is currently being edited (do not
-overwrite the textarea mid-typing); apply Realtime changes for other cards
-normally. Scenes render strictly ordered by `position`.
+user edits. For user edits the guard is precise:
+- **Ignore Realtime UPDATEs for a card while it is dirty** (an edit is pending or
+  an autosave is in flight) — this is what makes the echo of your own write a
+  no-op and prevents clobbering the textarea mid-typing.
+- **On successful autosave, clear the card's dirty flag**; the value you wrote is
+  authoritative.
+- Once not dirty, Realtime UPDATEs for that card apply normally again.
 
 ## 7. Brand seeding
 
@@ -169,7 +226,7 @@ rest is present for later phases. No settings UI.
 
 | File | Purpose |
 |---|---|
-| `supabase/migrations/<ts>_phase2_realtime.sql` | Add `scenes`, `shots`, `jobs` to `supabase_realtime`. |
+| `supabase/migrations/<ts>_phase2_script.sql` | Add `scenes`, `shots`, `jobs` to `supabase_realtime`; create the `upsert_scene_with_shots(...)` RPC. |
 | `package.json` | Add `@anthropic-ai/sdk`. |
 | `src/lib/env.server.ts` | Add `anthropic.apiKey` getter. |
 | `src/lib/ai/anthropic.ts` | Server-only Anthropic client factory. |
@@ -200,15 +257,16 @@ rest is present for later phases. No settings UI.
 
 ## 10. Risks & mitigations
 
-- **Model emits invalid NDJSON / pretty-printed JSON.** Mitigate with firm
-  prompt instructions, per-line Zod validation, skip-and-log on a bad line.
-  Consider a low temperature for structural reliability.
-- **Inngest retry duplicates rows.** Mitigate with upserts on the natural unique
-  keys.
-- **Realtime echo clobbers an in-progress edit.** Mitigate with focused/dirty
-  card guarding (Section 6).
-- **Exact Opus model id / streaming API.** Verify against the `claude-api`
-  reference during implementation rather than assuming.
+- **Model emits invalid NDJSON / pretty-printed JSON.** Mitigated by firm prompt
+  instructions, a **pinned low temperature** (decided, Section 5), per-line Zod
+  validation, and skip-and-count on a bad line.
+- **Inngest retry duplicates rows.** Mitigated by the `upsert_scene_with_shots`
+  RPC upserting on the natural unique keys inside one transaction.
+- **Realtime echo clobbers an in-progress edit.** Mitigated by the dirty-card
+  echo-guard (Section 6).
+- **Text-stream vs structured-output API shape.** The one external unknown that
+  could invalidate per-line parsing — **verified first** against the `claude-api`
+  reference at implementation time, before the parser is built (Section 5).
 
 ## 11. Out of scope / future phases
 
@@ -216,3 +274,9 @@ Voice synthesis and `audio_status` lifecycle (Phase 3); composition spec and the
 render connection (Phase 4); full channel/brand settings UI (Phase 8); cost
 ledger entries and `model_routing` (later phases). Phase 2 records no
 `cost_events` and creates no `script_revisions`.
+
+**`videos.current_script_revision_id`** is **intentionally left null** in Phase 2
+and nothing reads it expecting a value: the editor loads scenes directly from the
+`scenes` table, consistent with scenes-as-source-of-truth. The pointer becomes
+meaningful only once revisions exist (a later phase). This is deliberate, not an
+oversight.
