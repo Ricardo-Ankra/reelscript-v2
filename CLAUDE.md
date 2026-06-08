@@ -59,8 +59,16 @@ authoritative and the `docs/` copy remains the design record.
 ## Working agreement
 
 - **Build strictly in the build-plan phase order. Do not jump ahead.**
-- **Current phase: Phase 1 — The render spine.** (Phase 0 — Foundations:
-  complete and verified, 2026-06-04.)
+- **Current phase: Phase 2 — Script and scenes.** (Phase 0 — Foundations:
+  complete and verified, 2026-06-04. Phase 1 — The render spine: complete and
+  verified, 2026-06-08, hand-written spec rendered to MP4 on Lambda and played
+  in the browser.)
+  - **Phase 1 deferrals carried forward:** (1) the Remotion site is hosted on
+    **S3**, not R2 — migrate the site bundle to R2 in Phase 7 (see
+    `docs/.../deferred-remotion-site-r2`). (2) Lambda completion is handled by
+    **polling** `getRenderProgress` (isolated in `waitForLambdaCompletion()`),
+    not the wait-for-event webhook — swap to the spec-10.6 pattern when we
+    deploy to Vercel.
 - Before writing code for a phase, propose a short plan and the milestone, and
   flag any ambiguity in the docs. Build only to the current phase's milestone.
 - Day-one, even in the thin slice (cheap now, ruinous to retrofit): RLS,
