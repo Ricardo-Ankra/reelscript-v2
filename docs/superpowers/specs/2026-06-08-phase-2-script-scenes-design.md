@@ -39,7 +39,8 @@ editable shots) drop in without a card redesign.
 | Editor layout | **Option A — single column of stacked scene cards** | The card maps 1:1 to a scene, which is the autosave boundary and (later) the audio-staleness boundary. UI unit = data unit. |
 | Generation status | **A minimal `jobs` row**, surfaced via Realtime | Error surfacing matters (Phase 1 lesson); same mechanism voice/render reuse. |
 | Per-line atomicity | **`upsert_scene_with_shots` RPC, one txn per line** | A card never appears without its shots; a mid-stream failure leaves N complete scenes. JS client can't transact two upserts. |
-| Generation temperature | **Pinned low (e.g. 0.2)** | Reduces malformed-NDJSON risk — the top risk. |
+| Model | **`claude-opus-4-8`** (latest Opus) | Build plan specifies Opus for script generation. |
+| NDJSON reliability | **Firm "ONLY NDJSON" prompt + adaptive thinking ON + per-line Zod + skip-count** | Opus 4.8 **removed** `temperature` (400s), so "pin low temp" is impossible; these are the equivalent levers. Adaptive thinking ON keeps reasoning in thinking blocks so it never leaks into the NDJSON text stream. |
 | Config source of truth | **`video.settings` written once**, copied into the event | One authoritative source, not two independently-read ones. |
 | Audio-staleness trigger | **Deferred to Phase 3** | No-op until voice exists (only flips `synthesized` rows). |
 
@@ -109,19 +110,27 @@ uses the RLS-protected publishable client for reads, Realtime, and autosave.
 - Add an `anthropic.apiKey` lazy getter to `src/lib/env.server.ts` (same
   `required()` pattern as the rest). `ANTHROPIC_API_KEY` already exists in
   `.env.example`.
-- **Model:** a single pinned constant (latest Opus) with a `TODO` to read
-  `model_routing` when that is wired (Phase 9).
-- **Temperature: pinned low (decided).** The generation call uses a low
-  temperature (e.g. `0.2`). This directly reduces malformed-NDJSON risk — the
-  top listed risk — by making structural output more deterministic.
-- **Verify first (external unknown).** Before building the per-line parser,
-  confirm against the `claude-api` reference whether the chosen approach is a
-  **plain text stream** (model emits NDJSON as text, we split on `\n`) versus a
-  **structured-output / tool-use** stream (which would deliver incremental tool
-  JSON, not newline-delimited text). This is the one external unknown that could
-  invalidate the per-line parsing design, so it is resolved *first* at
-  implementation time. The locked decision is NDJSON-as-text; verification
-  confirms the API shape that delivers it, and the exact model id.
+- **Model:** the pinned constant `claude-opus-4-8` (latest Opus, per the build
+  plan), with a `TODO` to read `model_routing` when that is wired (Phase 9).
+- **NDJSON reliability on Opus 4.8 (verified, decided).** Opus 4.8 **removed**
+  `temperature`/`top_p`/`top_k` (they 400), so the earlier "pin low temperature"
+  decision is not achievable on the latest Opus. The equivalent reliability is
+  obtained with the levers Opus 4.8 has:
+  - a **firm prompt** instructing "output ONLY NDJSON, one scene object per line,
+    no other text";
+  - **adaptive thinking kept ON** (`thinking: {type: "adaptive"}`) so the model's
+    reasoning stays in separate `thinking` content blocks and never leaks into
+    the visible text — the parser consumes only `text_delta`, so the NDJSON
+    stream stays clean (disabling thinking risks reasoning bleeding into the text
+    output on 4.8);
+  - **per-line Zod validation** + the **skipped-line counter**.
+- **Verification done (the flagged external unknown).** Confirmed against the
+  `claude-api` reference that the approach is a **plain text stream**
+  (`messages.stream()` → `content_block_delta` → `text_delta`, split on `\n`).
+  The **structured-output** feature (`output_config.format`) would have
+  *invalidated* per-line parsing — it constrains the whole response to a single
+  JSON object, not newline-delimited objects. NDJSON-as-text stands; structured
+  output is explicitly not used.
 
 ### Config source of truth (decided)
 Video config (aspect ratio, target length, fps, captions, music) has **one
@@ -258,7 +267,8 @@ rest is present for later phases. No settings UI.
 ## 10. Risks & mitigations
 
 - **Model emits invalid NDJSON / pretty-printed JSON.** Mitigated by firm prompt
-  instructions, a **pinned low temperature** (decided, Section 5), per-line Zod
+  instructions, **adaptive thinking kept ON** (keeps reasoning out of the text
+  stream on Opus 4.8 — temperature is unavailable there), per-line Zod
   validation, and skip-and-count on a bad line.
 - **Inngest retry duplicates rows.** Mitigated by the `upsert_scene_with_shots`
   RPC upserting on the natural unique keys inside one transaction.

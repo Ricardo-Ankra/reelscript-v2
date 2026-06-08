@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { PromptBox } from './PromptBox';
 
 // Phase 0 stub dashboard. Its job is to prove the spine works end-to-end:
 // the session resolves, and a Tier 1 RLS-scoped read returns this user's own
@@ -19,14 +20,18 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <h1 className="text-2xl font-semibold">New video</h1>
         <p className="text-sm opacity-70">
-          Phase 0 foundations — the app shell stands up, authenticated.
+          Type a prompt and watch the script generate scene by scene.
         </p>
         <Link href="/render" className="mt-2 inline-block text-sm underline">
           Go to the render spine →
         </Link>
       </div>
+
+      <section className="rounded-lg border border-black/10 p-4 dark:border-white/10">
+        <PromptBox />
+      </section>
 
       <section className="space-y-2 rounded-lg border border-black/10 p-4 text-sm dark:border-white/10">
         <h2 className="font-medium">Session</h2>

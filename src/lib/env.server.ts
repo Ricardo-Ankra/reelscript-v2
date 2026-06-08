@@ -45,4 +45,9 @@ export const serverEnv = {
       return required('REMOTION_SERVE_URL');
     },
   },
+  anthropic: {
+    get apiKey() {
+      return required('ANTHROPIC_API_KEY');
+    },
+  },
 };
