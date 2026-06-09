@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "metadata": { "width": 1080, "height": 1920, "fps": 30, "durationInFrames": 150 },
   "theme": {
     "colors": {
@@ -14,6 +14,7 @@
     "logos": {},
     "motion": "standard"
   },
+  "assets": [],
   "scenes": [
     {
       "id": "scene-1",

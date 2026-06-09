@@ -128,7 +128,7 @@ export async function startSampleRender(): Promise<{ renderId: string; reused: b
   if (created.error || !created.data) throw new Error(`render insert: ${created.error?.message}`);
   const renderId = created.data.id as string;
 
-  await inngest.send({ name: 'render/start', data: { renderId, specKey } });
+  await inngest.send({ name: 'render/sample', data: { renderId, specKey } });
 
   revalidatePath('/render');
   return { renderId, reused: false };

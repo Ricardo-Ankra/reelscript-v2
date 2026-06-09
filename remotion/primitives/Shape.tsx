@@ -1,5 +1,5 @@
 import type { FC } from 'react';
-import { useTheme } from '../../src/lib/primitives/contract';
+import { useTheme } from '../../src/lib/primitives/theme-context';
 
 // Rectangles, lines, accents, backgrounds — the basis of the no-stock graphic
 // path (spec 8.9). Colour comes from a theme token.

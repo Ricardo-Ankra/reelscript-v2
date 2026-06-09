@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { SceneCard, type Shot } from './SceneCard';
 import { estimateSynthesisCost } from '@/lib/voice/estimate';
 import { synthesizeScenes, getSceneAudioUrl } from './voice-actions';
+import { startVideoRender, getRenderState } from './render-actions';
 
 export type SceneWithShots = {
   id: string;
@@ -39,6 +40,12 @@ export function Editor({
   // Scene ids with synthesis in flight (set on click, cleared as audio lands or the
   // voice job ends). Drives the per-card "Synthesizing…" state.
   const [synthesizing, setSynthesizing] = useState<Set<string>>(new Set());
+  // Render state (Phase 4): the active render id + its polled status/output.
+  const [renderId, setRenderId] = useState<string | null>(null);
+  const [renderStatus, setRenderStatus] = useState<string | null>(null);
+  const [renderUrl, setRenderUrl] = useState<string | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [renderElapsed, setRenderElapsed] = useState(0); // seconds, ticked while active
 
   // Echo-guard: scenes with an in-flight/pending edit. While a scene id is here,
   // Realtime UPDATEs for it are ignored so we don't clobber the textarea.
@@ -252,10 +259,72 @@ export function Editor({
     return url;
   }, []);
 
+  // Generate Video: snapshot + compose + render. Handles the completeness gate —
+  // a stale-scenes block prompts for an explicit override (honest mismatch).
+  const handleGenerate = useCallback(async () => {
+    setRenderError(null);
+    const begin = (renderId: string) => {
+      setRenderId(renderId);
+      setRenderStatus('queued');
+      setRenderUrl(null);
+      setRenderElapsed(0);
+    };
+    const res = await startVideoRender(videoId, false);
+    if (!('blocked' in res)) {
+      begin(res.renderId);
+      return;
+    }
+    if (res.blocked === 'unsynthesized_scenes') {
+      setRenderError('Synthesize every scene before rendering.');
+      return;
+    }
+    // stale_scenes — ask for an explicit override, then retry once.
+    if (confirm('Some scenes have stale audio (edited since synthesis). Render with the existing audio anyway?')) {
+      const retry = await startVideoRender(videoId, true);
+      if ('blocked' in retry) setRenderError('Render is still blocked.');
+      else begin(retry.renderId);
+    }
+  }, [videoId]);
+
+  // Poll the render until it completes (gives us the signed playback URL too).
+  useEffect(() => {
+    if (!renderId) return;
+    if (renderStatus === 'complete' || renderStatus === 'failed') return;
+    let active = true;
+    const tick = async () => {
+      try {
+        const s = await getRenderState(renderId);
+        if (!active) return;
+        setRenderStatus(s.status);
+        if (s.url) setRenderUrl(s.url);
+        if (s.status === 'failed') setRenderError(s.error ?? 'Render failed.');
+      } catch {
+        /* transient; keep polling */
+      }
+    };
+    void tick();
+    const id = setInterval(tick, 3000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [renderId, renderStatus]);
+
   const ordered = scenes.slice().sort((a, b) => a.position - b.position);
   const targets = scenes.filter((s) => SYNTH_TARGET.has(s.audio_status));
   const estimate = estimateSynthesisCost(targets.map((s) => s.narration));
   const anySynthesizing = synthesizing.size > 0;
+  const unsynthesized = scenes.filter((s) => s.audio_status === 'not_synthesized').length;
+  const renderActive =
+    renderStatus != null && renderStatus !== 'complete' && renderStatus !== 'failed';
+  const canRender = scenes.length > 0 && unsynthesized === 0 && !renderActive;
+
+  // Tick the elapsed-seconds counter once a second while a render is active.
+  useEffect(() => {
+    if (!renderActive) return;
+    const id = setInterval(() => setRenderElapsed((e) => e + 1), 1000);
+    return () => clearInterval(id);
+  }, [renderActive]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -279,6 +348,39 @@ export function Editor({
           >
             {anySynthesizing ? 'Synthesizing…' : 'Synthesize all'}
           </button>
+        </div>
+      )}
+
+      {ordered.length > 0 && (
+        <div className="space-y-2 rounded-lg border border-black/10 bg-black/[0.015] px-3 py-2 dark:border-white/10 dark:bg-white/[0.02]">
+          <div className="flex items-center justify-between text-xs">
+            <span className="opacity-70">
+              {renderActive
+                ? `${renderPhaseLabel(renderStatus)} · ${formatElapsed(renderElapsed)}`
+                : renderStatus === 'complete'
+                  ? 'Video ready.'
+                  : unsynthesized > 0
+                    ? `Synthesize all ${unsynthesized} remaining scene${unsynthesized === 1 ? '' : 's'} to render`
+                    : 'Compose & render the video with voiceover'}
+            </span>
+            <button
+              type="button"
+              disabled={!canRender}
+              onClick={() => handleGenerate()}
+              className="rounded-md border border-black/15 px-2.5 py-1 font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+            >
+              {renderActive ? 'Generating…' : 'Generate Video'}
+            </button>
+          </div>
+          {renderError && <p className="text-xs text-red-600">{renderError}</p>}
+          {renderUrl && (
+            <video
+              key={renderUrl}
+              src={renderUrl}
+              controls
+              className="w-full rounded-md border border-black/10 dark:border-white/10"
+            />
+          )}
         </div>
       )}
 
@@ -309,6 +411,34 @@ export function Editor({
       )}
     </div>
   );
+}
+
+// Friendly labels for the render lifecycle (renders.status, set per pipeline phase).
+// Composition is the genuinely slow step (~1–2 min, thinking-enabled), so its label
+// says so — paired with the elapsed timer it reads as progressing, not frozen.
+function renderPhaseLabel(status: string | null): string {
+  switch (status) {
+    case 'queued':
+      return 'Queued';
+    case 'composing':
+      return 'Composing with AI (~1–2 min)…';
+    case 'resolving_assets':
+      return 'Preparing assets…';
+    case 'validating':
+      return 'Validating…';
+    case 'rendering':
+      return 'Rendering on Lambda…';
+    case 'encoding':
+      return 'Encoding…';
+    default:
+      return 'Working…';
+  }
+}
+
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 function StatusPill({ status }: { status: string | null }) {

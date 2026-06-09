@@ -59,22 +59,31 @@ authoritative and the `docs/` copy remains the design record.
 ## Working agreement
 
 - **Build strictly in the build-plan phase order. Do not jump ahead.**
-- **Current phase: Phase 4 — Composition, and the slice closes.** (Phase 0 —
-  Foundations: complete and verified, 2026-06-04. Phase 1 — The render spine:
-  complete and verified, 2026-06-08, hand-written spec rendered to MP4 on Lambda
-  and played in the browser. Phase 2 — Script and scenes: complete and verified,
-  2026-06-08, prompt → streaming editable script. Phase 3 — Voice synthesis:
-  complete and verified, 2026-06-09, scenes synthesized to audio in R2 with
-  character timings, staleness flip, and the 5-concurrency cap. Design doc:
-  `docs/superpowers/specs/2026-06-09-phase-3-voice-synthesis-design.md`.)
-  - **Phase 3 deferrals carried forward:** the ElevenLabs key is an **env var**
-    (`ELEVENLABS_API_KEY`), not the `api_credentials` table — wire the table +
-    encryption in Phase 8. Synthesis is **fallback-only** (emotion tags stripped to
-    plain text; the fixed vocabulary + strip logic are defined but no per-model
-    `voice_profiles` rows / UI exist yet — Phase 8). The concurrency cap is a plain
-    in-function chunk of 5; the **shared rate/concurrency governor** and the full
-    **failure taxonomy** (quota-pause/resume, Retry-After) are Phase 9. The seed
-    channel uses a hardcoded default public voice.
+- **Current phase: Phase 5 — Asset richness.** (Phase 0 — Foundations: complete &
+  verified 2026-06-04. Phase 1 — Render spine: complete & verified 2026-06-08.
+  Phase 2 — Script and scenes: complete & verified 2026-06-08. Phase 3 — Voice
+  synthesis: complete & verified 2026-06-09. **Phase 4 — Composition, the slice
+  closes: complete & verified 2026-06-09** — a prompt becomes a rendered MP4 with
+  voiceover, fully automatic (compose [Sonnet+thinking] → Gate 1 → durable spec →
+  sign assets → Lambda → finalize). Design docs under
+  `docs/superpowers/specs/2026-06-0*`.)
+  - **Phase 3 deferrals carried forward:** ElevenLabs key is an **env var**
+    (`ELEVENLABS_API_KEY`), not `api_credentials` (Phase 8); synthesis is
+    **fallback-only** (no per-model `voice_profiles` rows/UI — Phase 8); the voice
+    concurrency cap is a plain chunk of 5 (shared governor — Phase 9); seed uses a
+    hardcoded default voice.
+  - **Phase 4 deferrals carried forward:** **stock + agentic asset selection**
+    (Pexels/Pixabay + vision) and **Gate 2** (smoke frame + vision) are Phase 5 —
+    composition currently uses Text/Shape/FullBleed only (the 8.9 procedural path).
+    Captions / kinetic text / music + remux / attribution overlay are Phase 6.
+    `model_routing` is Phase 8 (Sonnet pinned in code). The **render idempotency
+    key is `hash(script_revision_id)`** (composition is non-deterministic), reused
+    only for in-flight renders. The composition spec exists as a **durable
+    key-based record** + an **ephemeral signed render-time copy** (sign at
+    render-start, re-signable on re-render). **Lambda chunk concurrency is capped**
+    via `framesPerLambda` (a stand-in for the Phase-9 governor — uncapped fan-out
+    hits the AWS account "Rate Exceeded" limit). The **Phase-1 sample render** is
+    kept behind the debug-only `render/sample` event.
   - **Phase 1 deferrals carried forward:** (1) the Remotion site is hosted on
     **S3**, not R2 — migrate the site bundle to R2 in Phase 7 (see
     `docs/.../deferred-remotion-site-r2`). (2) Lambda completion is handled by

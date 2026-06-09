@@ -2,9 +2,14 @@ import { Inngest } from 'inngest';
 import type { VideoConfig, BrandContext } from '@/lib/ai/script-generation';
 import type { VoiceSettings } from '@/lib/voice/alignment';
 
-// render/start carries the render row id and the R2 key of its stored spec; the
-// worker signs the spec URL at render start (spec 10.3).
-export type RenderStartData = { renderId: string; specKey: string };
+// render/start drives the full composition pipeline (Phase 4): the spec doesn't
+// exist yet — it's composed inside the job. Carries the job + render rows and the
+// video to compose from (spec 13.1 / api-surface InngestEvents).
+export type RenderStartData = { jobId: string; renderId: string; videoId: string };
+
+// render/sample is the Phase-1 debug harness: render a pre-stored spec by pointer,
+// no AI. Kept as the only no-AI path to exercise the Lambda spine in isolation.
+export type RenderSampleData = { renderId: string; specKey: string };
 
 // script/generate carries everything the worker needs to generate without
 // re-reading rows: the job to update, the target video + account, the user

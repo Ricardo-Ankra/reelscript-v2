@@ -1,6 +1,6 @@
 import type { FC } from 'react';
 import { AbsoluteFill } from 'remotion';
-import { useTheme } from '../../src/lib/primitives/contract';
+import { useTheme } from '../../src/lib/primitives/theme-context';
 
 // Full-bleed background. In later phases it backs an image/video; in Phase 1
 // (no stock) it is a solid brand colour from a theme token.

@@ -1,7 +1,7 @@
 import type { FC } from 'react';
-import { AbsoluteFill, Sequence, type CalculateMetadataFunction } from 'remotion';
+import { AbsoluteFill, Audio, Sequence, type CalculateMetadataFunction } from 'remotion';
 import { loadFont } from '@remotion/google-fonts/Poppins';
-import { ThemeContext } from '../src/lib/primitives/contract';
+import { ThemeContext } from '../src/lib/primitives/theme-context';
 import type { CompositionSpec } from '../src/lib/composition/spec';
 import { PRIMITIVES } from './primitives/registry';
 
@@ -47,13 +47,22 @@ export const ReelComposition: FC<ReelProps> = ({ spec }) => {
   const sceneOffsets = spec.scenes.map((_, i) =>
     spec.scenes.slice(0, i).reduce((sum, s) => sum + s.durationInFrames, 0),
   );
+  // Manifest lookup: scenes reference voiceover by asset id; the render-time copy
+  // carries the signed url (spec 10.3). A durable (key-only) spec has no url, so a
+  // scene's audio simply doesn't play if it was never resolved.
+  const assetUrl = (assetId: string): string | undefined =>
+    spec.assets.find((a) => a.id === assetId)?.url;
+
   return (
     <ThemeContext.Provider value={spec.theme}>
       <AbsoluteFill style={{ backgroundColor: spec.theme.colors.background }}>
         {spec.scenes.map((scene, sceneIndex) => {
           const from = sceneOffsets[sceneIndex];
+          const voiceUrl = scene.voiceover ? assetUrl(scene.voiceover.assetId) : undefined;
           return (
             <Sequence key={scene.id} from={from} durationInFrames={scene.durationInFrames}>
+              {/* Per-scene voiceover; plays from the scene's first frame (spec 8.3). */}
+              {voiceUrl && <Audio src={voiceUrl} />}
               {scene.instances.map((inst, i) => {
                 const Comp = PRIMITIVES[inst.primitive];
                 if (!Comp) return null;

@@ -8,3 +8,12 @@ import type { CompositionSpec } from './spec';
 export function specIdempotencyKey(spec: CompositionSpec): string {
   return createHash('sha256').update(JSON.stringify(spec)).digest('hex');
 }
+
+// Phase 4 render idempotency (spec 10.5, adapted): the composition is
+// non-deterministic so the spec isn't known at kickoff — key on the immutable
+// script_revision instead (it captures the committed scene state). Reuse is scoped
+// to in-flight renders, so an explicit re-render of the same revision still makes a
+// new preserved version (spec 7.2).
+export function renderIdempotencyKey(revisionId: string): string {
+  return createHash('sha256').update(`revision:${revisionId}`).digest('hex');
+}

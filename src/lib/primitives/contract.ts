@@ -13,7 +13,6 @@
 // Depends on: react, remotion, zod.
 // =============================================================================
 
-import { createContext, useContext } from 'react';
 import { z, type ZodTypeAny } from 'zod';
 
 // -----------------------------------------------------------------------------
@@ -48,18 +47,9 @@ export interface Theme {
   motion: 'subtle' | 'standard' | 'punchy';
 }
 
-// The composition root wraps every scene in a provider holding the baked theme.
-// Primitives consume it via useTheme(). This is the only sanctioned way for a
-// primitive to obtain brand values.
-export const ThemeContext = createContext<Theme | null>(null);
-
-export function useTheme(): Theme {
-  const theme = useContext(ThemeContext);
-  if (!theme) {
-    throw new Error('useTheme must be used within a ThemeProvider.');
-  }
-  return theme;
-}
+// The React provider/hook for handing a baked theme to primitives lives in
+// ./theme-context (it imports react hooks, which can't be pulled into a
+// react-server bundle — this file must stay server-importable for Gate 1).
 
 // -----------------------------------------------------------------------------
 // 2. Prop schema — what a primitive accepts, and its lifecycle

@@ -1,6 +1,6 @@
 import type { FC } from 'react';
 import { interpolate, useCurrentFrame } from 'remotion';
-import { useTheme } from '../../src/lib/primitives/contract';
+import { useTheme } from '../../src/lib/primitives/theme-context';
 
 // Titles and labels. Reads colour + font from the theme (never literals), and
 // animates from useCurrentFrame() (never wall-clock), per the primitive contract.
