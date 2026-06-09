@@ -23,7 +23,7 @@ export default async function VideoEditorPage({
 
   const { data: sceneRows } = await supabase
     .from('scenes')
-    .select('id, position, narration, duration_seconds')
+    .select('id, position, narration, duration_seconds, audio_status, audio_r2_key')
     .eq('video_id', id)
     .order('position');
 
@@ -32,6 +32,8 @@ export default async function VideoEditorPage({
     position: s.position as number,
     narration: s.narration as string,
     duration_seconds: (s.duration_seconds as number | null) ?? null,
+    audio_status: (s.audio_status as string) ?? 'not_synthesized',
+    audio_r2_key: (s.audio_r2_key as string | null) ?? null,
     shots: [],
   }));
 

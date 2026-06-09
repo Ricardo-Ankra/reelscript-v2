@@ -50,4 +50,9 @@ export const serverEnv = {
       return required('ANTHROPIC_API_KEY');
     },
   },
+  elevenlabs: {
+    get apiKey() {
+      return required('ELEVENLABS_API_KEY');
+    },
+  },
 };

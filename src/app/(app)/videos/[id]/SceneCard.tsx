@@ -1,5 +1,7 @@
 'use client';
 
+import { useRef, useState } from 'react';
+
 export type Shot = {
   id: string;
   position: number;
@@ -10,35 +12,64 @@ export type Shot = {
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
-// One card == one scene. The card is the autosave boundary and (in Phase 4) the
-// audio-staleness boundary — UI unit and data unit are the same. Narration is
-// editable; shots are read-only ("the AI's plan"). The status corner and action
-// slot are laid out now (empty) so Phase 3 (regenerate) and Phase 4 (audio
-// status) drop in without restructuring the card.
+// One card == one scene: the autosave boundary AND the audio-staleness boundary
+// (UI unit = data unit). Narration is editable; shots are read-only ("the AI's
+// plan"). Phase 3 fills the two slots Phase 2 reserved: the status dot now reflects
+// audio_status, and the action slot carries Synthesize / Re-synthesize / Listen.
 export function SceneCard({
   position,
   narration,
   shots,
   saveState,
+  audioStatus,
+  hasAudio,
+  synthesizing,
   onChange,
+  onSynthesize,
+  getAudioUrl,
 }: {
   position: number;
   narration: string;
   shots: Shot[];
   saveState: SaveState;
+  audioStatus: string;
+  hasAudio: boolean;
+  synthesizing: boolean;
   onChange: (text: string) => void;
+  onSynthesize: () => void;
+  getAudioUrl: () => Promise<string | null>;
 }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [loadingAudio, setLoadingAudio] = useState(false);
+
+  const listen = async () => {
+    setLoadingAudio(true);
+    try {
+      const url = await getAudioUrl();
+      if (url && audioRef.current) {
+        audioRef.current.src = url;
+        await audioRef.current.play();
+      }
+    } finally {
+      setLoadingAudio(false);
+    }
+  };
+
+  const dot = audioDot(audioStatus, synthesizing);
+
   return (
     <div className="relative rounded-xl border border-black/15 bg-black/[0.015] p-4 shadow-sm dark:border-white/15 dark:bg-white/[0.02]">
-      {/* Header: scene number + reserved status corner (Phase 4 audio status) */}
+      {/* Header: scene number + audio status */}
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[11px] font-medium uppercase tracking-wide opacity-50">
           Scene {position}
         </span>
         <div className="flex items-center gap-2">
           <span className="text-[11px] opacity-50">{saveLabel(saveState)}</span>
-          {/* reserved: audio-status indicator slot */}
-          <span aria-hidden className="h-2 w-2 rounded-full bg-black/10 dark:bg-white/10" />
+          <span className="flex items-center gap-1 text-[11px] opacity-60" title={dot.label}>
+            <span aria-hidden className={`h-2 w-2 rounded-full ${dot.className}`} />
+            {dot.label}
+          </span>
         </div>
       </div>
 
@@ -50,7 +81,7 @@ export function SceneCard({
         className="w-full resize-y rounded-md border border-transparent bg-transparent p-2 text-sm leading-relaxed outline-none focus:border-black/20 dark:focus:border-white/20"
       />
 
-      {/* Shots — read-only, muted, clearly subordinate (editable in Phase 3) */}
+      {/* Shots — read-only, muted, clearly subordinate */}
       {shots.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-black/5 pt-2 dark:border-white/5">
           {shots
@@ -68,9 +99,46 @@ export function SceneCard({
         </ul>
       )}
 
-      {/* reserved: per-card action slot (Phase 3 regenerate). Empty in Phase 2. */}
+      {/* Action slot: Synthesize / Re-synthesize + Listen */}
+      <div className="mt-3 flex items-center gap-2 border-t border-black/5 pt-2 dark:border-white/5">
+        <button
+          type="button"
+          disabled={synthesizing}
+          onClick={onSynthesize}
+          className="rounded-md border border-black/15 px-2 py-1 text-xs font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+        >
+          {synthesizing
+            ? 'Synthesizing…'
+            : audioStatus === 'not_synthesized'
+              ? 'Synthesize'
+              : 'Re-synthesize'}
+        </button>
+        {hasAudio && (
+          <button
+            type="button"
+            disabled={loadingAudio}
+            onClick={listen}
+            className="rounded-md border border-black/15 px-2 py-1 text-xs enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+          >
+            {loadingAudio ? 'Loading…' : '▶ Listen'}
+          </button>
+        )}
+        <audio ref={audioRef} className="hidden" preload="none" />
+      </div>
     </div>
   );
+}
+
+function audioDot(status: string, synthesizing: boolean): { className: string; label: string } {
+  if (synthesizing) return { className: 'bg-blue-500 animate-pulse', label: 'synthesizing' };
+  switch (status) {
+    case 'synthesized':
+      return { className: 'bg-green-500', label: 'synthesized' };
+    case 'stale':
+      return { className: 'bg-amber-500', label: 'stale' };
+    default:
+      return { className: 'bg-black/15 dark:bg-white/15', label: 'no audio' };
+  }
 }
 
 function saveLabel(s: SaveState): string {

@@ -7,13 +7,14 @@ import {
   type VideoConfig,
   type BrandContext,
 } from '@/lib/ai/script-generation';
+import { DEFAULT_VOICE_ID } from '@/lib/voice/elevenlabs';
 
 // One seeded channel with minimal brand (name, primary colour, font, voice).
 // Seeded, not a settings UI (Phase 2). The brand informs the generation prompt.
 const SEED_CHANNEL = 'Studio';
 const SEED_BRAND = {
   brand_kit: { colors: { primary: '#E2725B' }, typography: { font: 'Poppins' } },
-  voice_tts: { voice_id: 'placeholder', model: 'eleven_multilingual_v2' },
+  voice_tts: { voice_id: DEFAULT_VOICE_ID, model: 'eleven_multilingual_v2' },
   brand_voice: { tone: 'clear, friendly, concise' },
 };
 

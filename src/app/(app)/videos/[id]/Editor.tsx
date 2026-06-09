@@ -3,17 +3,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { SceneCard, type Shot } from './SceneCard';
+import { estimateSynthesisCost } from '@/lib/voice/estimate';
+import { synthesizeScenes, getSceneAudioUrl } from './voice-actions';
 
 export type SceneWithShots = {
   id: string;
   position: number;
   narration: string;
   duration_seconds: number | null;
+  audio_status: string;
+  audio_r2_key: string | null;
   shots: Shot[];
 };
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 const ACTIVE = new Set(['queued', 'running']);
+// Scenes whose audio doesn't match the current script — what "Synthesize all" targets.
+const SYNTH_TARGET = new Set(['not_synthesized', 'stale']);
 
 export function Editor({
   videoId,
@@ -30,6 +36,9 @@ export function Editor({
   const [scenes, setScenes] = useState<SceneWithShots[]>(initialScenes);
   const [status, setStatus] = useState<string | null>(initialStatus);
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
+  // Scene ids with synthesis in flight (set on click, cleared as audio lands or the
+  // voice job ends). Drives the per-card "Synthesizing…" state.
+  const [synthesizing, setSynthesizing] = useState<Set<string>>(new Set());
 
   // Echo-guard: scenes with an in-flight/pending edit. While a scene id is here,
   // Realtime UPDATEs for it are ignored so we don't clobber the textarea.
@@ -61,7 +70,7 @@ export function Editor({
   const reconcile = useCallback(async () => {
     const { data: sceneRows } = await supabase
       .from('scenes')
-      .select('id, position, narration, duration_seconds')
+      .select('id, position, narration, duration_seconds, audio_status, audio_r2_key')
       .eq('video_id', videoId)
       .order('position');
     if (!sceneRows) return;
@@ -93,6 +102,8 @@ export function Editor({
           position: r.position as number,
           narration,
           duration_seconds: (r.duration_seconds as number | null) ?? null,
+          audio_status: (r.audio_status as string) ?? 'not_synthesized',
+          audio_r2_key: (r.audio_r2_key as string | null) ?? null,
           shots: shotsByScene.get(id) ?? existing?.shots ?? [],
         };
       });
@@ -118,19 +129,47 @@ export function Editor({
             position: number;
             narration: string;
             duration_seconds: number | null;
+            audio_status: string;
+            audio_r2_key: string | null;
           };
           setScenes((prev) => {
             const existing = prev.find((s) => s.id === row.id);
             if (existing) {
-              if (dirty.current.has(row.id)) return prev; // ignore echo while editing
+              // Audio fields (status/key/duration) always merge — so the staleness
+              // flip shows live even mid-edit — but narration is held while dirty so
+              // the echo can't clobber the textarea.
               return prev.map((s) =>
                 s.id === row.id
-                  ? { ...s, narration: row.narration, position: row.position, duration_seconds: row.duration_seconds }
+                  ? {
+                      ...s,
+                      narration: dirty.current.has(row.id) ? s.narration : row.narration,
+                      position: row.position,
+                      duration_seconds: row.duration_seconds,
+                      audio_status: row.audio_status ?? s.audio_status,
+                      audio_r2_key: row.audio_r2_key ?? s.audio_r2_key,
+                    }
                   : s,
               );
             }
-            return [...prev, { ...row, shots: [] }];
+            return [
+              ...prev,
+              {
+                ...row,
+                audio_status: row.audio_status ?? 'not_synthesized',
+                audio_r2_key: row.audio_r2_key ?? null,
+                shots: [],
+              },
+            ];
           });
+          // A scene reaching 'synthesized' is done — drop its in-flight spinner.
+          if (row.audio_status === 'synthesized') {
+            setSynthesizing((prev) => {
+              if (!prev.has(row.id)) return prev;
+              const next = new Set(prev);
+              next.delete(row.id);
+              return next;
+            });
+          }
           if (payload.eventType === 'INSERT') void fetchShots(row.id);
         },
       )
@@ -138,8 +177,16 @@ export function Editor({
         'postgres_changes',
         { event: '*', schema: 'public', table: 'jobs', filter: `video_id=eq.${videoId}` },
         (payload) => {
-          const row = payload.new as { status?: string };
-          if (row?.status) setStatus(row.status);
+          const row = payload.new as { status?: string; type?: string };
+          // Script-generation drives the header status pill.
+          if (row?.type === 'script_generation' && row.status) setStatus(row.status);
+          // A finished/failed voice job clears any remaining in-flight spinners.
+          if (
+            row?.type === 'voice_synthesis' &&
+            (row.status === 'complete' || row.status === 'failed')
+          ) {
+            setSynthesizing(new Set());
+          }
         },
       )
       .subscribe((status) => {
@@ -185,7 +232,30 @@ export function Editor({
     [save],
   );
 
+  // Synthesize an explicit set of scenes (or all stale/not-synthesized when no ids).
+  const runSynthesis = useCallback(
+    async (sceneIds: string[] | undefined, optimisticIds: string[]) => {
+      if (optimisticIds.length === 0) return;
+      setSynthesizing((prev) => new Set([...prev, ...optimisticIds]));
+      try {
+        const res = await synthesizeScenes(videoId, sceneIds);
+        if ('nothingToDo' in res) setSynthesizing(new Set());
+      } catch {
+        setSynthesizing(new Set()); // surface failure by clearing the spinner
+      }
+    },
+    [videoId],
+  );
+
+  const getAudioUrl = useCallback(async (sceneId: string) => {
+    const { url } = await getSceneAudioUrl(sceneId);
+    return url;
+  }, []);
+
   const ordered = scenes.slice().sort((a, b) => a.position - b.position);
+  const targets = scenes.filter((s) => SYNTH_TARGET.has(s.audio_status));
+  const estimate = estimateSynthesisCost(targets.map((s) => s.narration));
+  const anySynthesizing = synthesizing.size > 0;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -193,6 +263,24 @@ export function Editor({
         <h1 className="text-lg font-semibold">{title}</h1>
         <StatusPill status={status} />
       </div>
+
+      {ordered.length > 0 && (
+        <div className="flex items-center justify-between rounded-lg border border-black/10 bg-black/[0.015] px-3 py-2 text-xs dark:border-white/10 dark:bg-white/[0.02]">
+          <span className="opacity-70">
+            {targets.length === 0
+              ? 'All scenes synthesized.'
+              : `${targets.length} scene${targets.length === 1 ? '' : 's'} to voice · ${estimate.characters} chars · ≈ $${estimate.estimatedUsd.toFixed(3)}`}
+          </span>
+          <button
+            type="button"
+            disabled={targets.length === 0 || anySynthesizing}
+            onClick={() => runSynthesis(undefined, targets.map((s) => s.id))}
+            className="rounded-md border border-black/15 px-2.5 py-1 font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+          >
+            {anySynthesizing ? 'Synthesizing…' : 'Synthesize all'}
+          </button>
+        </div>
+      )}
 
       {ordered.length === 0 ? (
         <p className="rounded-lg border border-dashed border-black/15 p-8 text-center text-sm opacity-60 dark:border-white/15">
@@ -209,7 +297,12 @@ export function Editor({
               narration={scene.narration}
               shots={scene.shots}
               saveState={saveStates[scene.id] ?? 'idle'}
+              audioStatus={scene.audio_status}
+              hasAudio={scene.audio_r2_key != null}
+              synthesizing={synthesizing.has(scene.id)}
               onChange={(text) => onNarrationChange(scene.id, text)}
+              onSynthesize={() => runSynthesis([scene.id], [scene.id])}
+              getAudioUrl={() => getAudioUrl(scene.id)}
             />
           ))}
         </div>

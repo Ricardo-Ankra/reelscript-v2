@@ -59,10 +59,22 @@ authoritative and the `docs/` copy remains the design record.
 ## Working agreement
 
 - **Build strictly in the build-plan phase order. Do not jump ahead.**
-- **Current phase: Phase 2 — Script and scenes.** (Phase 0 — Foundations:
-  complete and verified, 2026-06-04. Phase 1 — The render spine: complete and
-  verified, 2026-06-08, hand-written spec rendered to MP4 on Lambda and played
-  in the browser.)
+- **Current phase: Phase 4 — Composition, and the slice closes.** (Phase 0 —
+  Foundations: complete and verified, 2026-06-04. Phase 1 — The render spine:
+  complete and verified, 2026-06-08, hand-written spec rendered to MP4 on Lambda
+  and played in the browser. Phase 2 — Script and scenes: complete and verified,
+  2026-06-08, prompt → streaming editable script. Phase 3 — Voice synthesis:
+  complete and verified, 2026-06-09, scenes synthesized to audio in R2 with
+  character timings, staleness flip, and the 5-concurrency cap. Design doc:
+  `docs/superpowers/specs/2026-06-09-phase-3-voice-synthesis-design.md`.)
+  - **Phase 3 deferrals carried forward:** the ElevenLabs key is an **env var**
+    (`ELEVENLABS_API_KEY`), not the `api_credentials` table — wire the table +
+    encryption in Phase 8. Synthesis is **fallback-only** (emotion tags stripped to
+    plain text; the fixed vocabulary + strip logic are defined but no per-model
+    `voice_profiles` rows / UI exist yet — Phase 8). The concurrency cap is a plain
+    in-function chunk of 5; the **shared rate/concurrency governor** and the full
+    **failure taxonomy** (quota-pause/resume, Retry-After) are Phase 9. The seed
+    channel uses a hardcoded default public voice.
   - **Phase 1 deferrals carried forward:** (1) the Remotion site is hosted on
     **S3**, not R2 — migrate the site bundle to R2 in Phase 7 (see
     `docs/.../deferred-remotion-site-r2`). (2) Lambda completion is handled by
