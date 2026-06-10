@@ -38,6 +38,21 @@ export async function putObject(
   return key;
 }
 
+/** Signed PUT URL for a direct client upload (Phase 5 channel resources). The
+ *  uploader MUST send the same Content-Type it was signed with, or the signature
+ *  fails. Short TTL — the URL is used immediately after it is handed out. */
+export async function signedPutUrl(
+  key: string,
+  contentType: string,
+  expiresInSeconds = 600,
+): Promise<string> {
+  return getSignedUrl(
+    client(),
+    new PutObjectCommand({ Bucket: serverEnv.r2.bucket, Key: key, ContentType: contentType }),
+    { expiresIn: expiresInSeconds },
+  );
+}
+
 /** Signed GET URL for a private R2 object. Default 1h; pass a longer TTL for
  *  spec pointers that must outlive a queued render (spec 10.3). */
 export async function signedGetUrl(

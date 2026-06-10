@@ -4,6 +4,8 @@ import {
   frameLooksBlank,
   buildGate2QaPrompt,
   parseGate2Verdict,
+  buildResourceTagPrompt,
+  parseResourceTag,
   MIN_SMOKE_FRAME_BYTES,
 } from './vision.ts';
 
@@ -51,4 +53,34 @@ test('parseGate2Verdict: non-array / non-string issues are coerced to a clean li
   assert.deepEqual(parseGate2Verdict('{"pass": true, "issues": "nope"}'), { pass: true, issues: [] });
   // mixed array → only strings kept
   assert.deepEqual(parseGate2Verdict('{"pass": false, "issues": ["ok", 5, null]}'), { pass: false, issues: ['ok'] });
+});
+
+// --- channel-resource auto-tag --------------------------------------------
+
+test('buildResourceTagPrompt: asks for a description + lowercase tags as JSON', () => {
+  const p = buildResourceTagPrompt();
+  assert.ok(/description/i.test(p) && /tags/i.test(p));
+  assert.ok(p.includes('"description"') && p.includes('"tags"'));
+  assert.ok(/only a json object/i.test(p));
+});
+
+test('parseResourceTag: a clean description + tags', () => {
+  assert.deepEqual(parseResourceTag('{"description": "A red sports car", "tags": ["car", "red", "automotive"]}'), {
+    description: 'A red sports car',
+    tags: ['car', 'red', 'automotive'],
+  });
+});
+
+test('parseResourceTag: tolerates fences and coerces bad tags', () => {
+  assert.deepEqual(parseResourceTag('```json\n{"description": "x", "tags": ["a", 3, null, "b"]}\n```'), {
+    description: 'x',
+    tags: ['a', 'b'],
+  });
+  // tags missing or non-array → empty list, still valid if description present
+  assert.deepEqual(parseResourceTag('{"description": "x"}'), { description: 'x', tags: [] });
+});
+
+test('parseResourceTag: missing description or malformed → null', () => {
+  assert.equal(parseResourceTag('{"tags": ["a"]}'), null);
+  assert.equal(parseResourceTag('not json'), null);
 });
