@@ -231,6 +231,7 @@ export interface AgenticDeps {
   searchStock: (params: StockSearchParams) => Promise<StockCandidate[]>;
   maxTurns?: number; // safety cap on tool round-trips (default 8)
   onSearch?: (params: StockSearchParams, count: number) => void; // observability hook
+  feedback?: string; // Gate-1 feedback from a prior attempt, appended to the seed turn
 }
 
 export interface AgenticResult {
@@ -261,7 +262,10 @@ export async function runAgenticComposition(
   deps: AgenticDeps,
 ): Promise<AgenticResult> {
   const system = buildCompositionSystemPrompt(STARTER_REGISTRY, { stockEnabled: true });
-  const messages: LoopMessage[] = [{ role: 'user', content: buildCompositionUserPrompt(brief) }];
+  const userPrompt = deps.feedback
+    ? `${buildCompositionUserPrompt(brief)}\n\n${deps.feedback}`
+    : buildCompositionUserPrompt(brief);
+  const messages: LoopMessage[] = [{ role: 'user', content: userPrompt }];
   const registry = new Map<string, StockCandidate>();
   const maxTurns = deps.maxTurns ?? 8;
   let tokensIn = 0;

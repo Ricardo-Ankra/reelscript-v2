@@ -1,3 +1,4 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import {
   renderMediaOnLambda,
   getRenderProgress,
@@ -14,11 +15,19 @@ import {
   buildCompositionUserPrompt,
   parseComposition,
   assembleSpec,
+  runAgenticComposition,
+  collectReferencedAssetIds,
+  planStockResolution,
+  SEARCH_STOCK_TOOL,
   type CompositionBrief,
   type SceneBrief,
+  type LoopBlock,
 } from '@/lib/composition/compose';
 import { validateSpec, formatGate1Feedback, type Gate1Error } from '@/lib/composition/gate1';
 import type { CompositionSpec, AssetManifestEntry } from '@/lib/composition/spec';
+import { hasStockKeys, searchStock } from '@/lib/assets/search';
+import { resolveStockAssets, resolveResourceAssets } from '@/lib/assets/resolve';
+import { runGate2 } from '@/lib/composition/gate2';
 
 // =============================================================================
 // Phase 4 — the render pipeline (spec 13.1). One function: compose → gate1 →
@@ -65,65 +74,52 @@ export const renderVideo = inngest.createFunction(
       });
 
     // --- compose + Gate 1 (one checkpoint; internal budget-2 retry) ----------
+    // Phase 5: branch the compose between the agentic stock-vision loop and the
+    // Phase-4 procedural single-call. The no-key path IS the procedural one (spec 8.9).
     await setPhase('composing');
     const composed = await step.run('compose', async () => {
       const brief = await loadBrief(admin, videoId);
-      const system = buildCompositionSystemPrompt();
-      const user = buildCompositionUserPrompt(brief);
 
-      const messages: { role: 'user' | 'assistant'; content: string }[] = [
-        { role: 'user', content: user },
-      ];
-      let tokensIn = 0;
-      let tokensOut = 0;
-      let errors: Gate1Error[] = [];
+      // Pre-resolve explicit channel-resource shots (source='resource') into the
+      // manifest — already uploaded, so just a key lookup (spec 8.8). Stock assets
+      // are resolved later, after the loop picks them.
+      const resourceEntries = brief.resourceIds.length
+        ? await resolveResourceAssets(admin, brief.accountId, brief.resourceIds)
+        : [];
+      const briefWithResources: CompositionBrief = {
+        ...brief,
+        assets: [...brief.assets, ...resourceEntries],
+      };
 
-      for (let attempt = 0; attempt <= GATE1_RETRY_BUDGET; attempt++) {
-        // max_tokens must comfortably exceed the thinking + JSON output: adaptive
-        // thinking tokens count against max_tokens, and at 16k Sonnet could burn the
-        // whole budget thinking and emit NO text (empty → forced retry). 32k gives
-        // headroom; effort 'medium' reins in over-thinking on what is a structured
-        // arrangement task (composition is layout, not deep reasoning) — together
-        // they make the first attempt succeed quickly instead of after a wasted ~4min.
-        const stream = anthropic().messages.stream({
-          model: COMPOSITION_MODEL,
-          max_tokens: 32000,
-          thinking: { type: 'adaptive' },
-          output_config: { effort: 'medium' },
-          system,
-          messages,
-        });
-        const msg = await stream.finalMessage();
-        if (msg.stop_reason === 'max_tokens') {
-          // Ran out of room before finishing the JSON — surface it rather than
-          // letting it look like a malformed-output retry.
-          throw new Error('Composition hit max_tokens before completing the spec JSON.');
-        }
-        tokensIn += msg.usage.input_tokens ?? 0;
-        tokensOut += msg.usage.output_tokens ?? 0;
-        const text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+      const useStock = hasStockKeys() && brief.needsStock;
+      let outcome = useStock
+        ? await agenticCompose(briefWithResources, admin, brief.accountId)
+        : await proceduralCompose(briefWithResources);
 
-        const ai = parseComposition(text);
-        if (ai) {
-          const spec = assembleSpec(ai, brief);
-          const result = validateSpec(spec, brief.theme);
-          if (result.ok) {
-            await writeCompositionCost(admin, videoId, renderId, tokensIn, tokensOut);
-            return { ok: true as const, spec };
-          }
-          errors = result.errors;
-        } else {
-          errors = [{ rule: 'json', detail: 'Output was not a single valid JSON object.' }];
-        }
-        // Feed the structured failure back and retry (within budget).
-        messages.push({ role: 'assistant', content: text });
-        messages.push({
-          role: 'user',
-          content: `Your composition failed validation:\n${formatGate1Feedback(errors)}\nReturn ONLY the corrected JSON.`,
-        });
+      // Degrade rather than hard-fail: an agentic path that can't produce a valid
+      // stock composition falls back to one procedural pass (spec 8.9).
+      if (!outcome.ok && useStock) {
+        const fb = await proceduralCompose(briefWithResources);
+        outcome = {
+          ...fb,
+          tokensIn: outcome.tokensIn + fb.tokensIn,
+          tokensOut: outcome.tokensOut + fb.tokensOut,
+          searches: outcome.searches,
+        };
       }
-      await writeCompositionCost(admin, videoId, renderId, tokensIn, tokensOut);
-      return { ok: false as const, errors };
+
+      await writeCompositionCost(admin, videoId, renderId, outcome.tokensIn, outcome.tokensOut);
+      if (outcome.searches > 0) {
+        await writeCostEvent(admin, videoId, renderId, 'asset_search', 'stock', outcome.searches, 0);
+      }
+      if (!outcome.ok || !outcome.spec) {
+        return { ok: false as const, errors: outcome.errors ?? [] };
+      }
+      return {
+        ok: true as const,
+        spec: outcome.spec,
+        midSceneIntent: midSceneIntent(briefWithResources, outcome.spec),
+      };
     });
 
     if (!composed.ok) {
@@ -153,6 +149,37 @@ export const renderVideo = inngest.createFunction(
       await putObject(key, JSON.stringify(signed), 'application/json');
       return key;
     });
+
+    // --- Gate 2 (smoke still + vision QA, spec 11.2) -------------------------
+    // Render one mid-video still on the signed spec, mechanical not-blank check +
+    // one Claude-vision pass. A fail marks the render failed with the frame URL
+    // preserved (no auto-fix loop — that's Phase 7).
+    const gate2 = await step.run('gate2', async () => {
+      const specUrl = await signedGetUrl(renderSpecKey, 60 * 60);
+      const midFrame = Math.floor(durableSpec.metadata.durationInFrames / 2);
+      const result = await runGate2({
+        region,
+        functionName,
+        serveUrl: serverEnv.remotion.serveUrl,
+        specUrl,
+        midFrame,
+        sceneIntent: composed.midSceneIntent,
+      });
+      const visionUsd =
+        (result.tokensIn / 1_000_000) * SONNET_USD_PER_1M_IN +
+        (result.tokensOut / 1_000_000) * SONNET_USD_PER_1M_OUT;
+      await writeCostEvent(admin, videoId, renderId, 'smoke_frame', 'aws_lambda', 1, result.costUsd + visionUsd);
+      return { pass: result.pass, issues: result.issues, frameUrl: result.frameUrl };
+    });
+
+    if (!gate2.pass) {
+      await step.run('mark-gate2-failed', async () => {
+        const error = { phase: 'gate2', message: 'Smoke frame failed QA', issues: gate2.issues, frameUrl: gate2.frameUrl };
+        await admin.from('renders').update({ status: 'failed', error }).eq('id', renderId);
+        await admin.from('jobs').update({ status: 'failed', phase: 'failed', error }).eq('id', jobId);
+      });
+      return { renderId, failed: 'gate2' as const, issues: gate2.issues };
+    }
 
     // --- Lambda spine (Phase 1, unchanged except concurrency cap) ------------
     await setPhase('rendering');
@@ -258,17 +285,26 @@ const DIMS: Record<string, { width: number; height: number }> = {
   '16:9': { width: 1920, height: 1080 },
 };
 
+// The brief plus the Phase-5 routing facts: which account owns it, whether any shot
+// wants stock (drives the agentic branch), and the explicit resource ids to resolve.
+type LoadedBrief = CompositionBrief & {
+  accountId: string;
+  needsStock: boolean;
+  resourceIds: string[];
+};
+
 // Load everything the composition needs from the DB and shape it into a brief.
 async function loadBrief(
   admin: ReturnType<typeof createAdminClient>,
   videoId: string,
-): Promise<CompositionBrief> {
+): Promise<LoadedBrief> {
   const { data: video, error: vErr } = await admin
     .from('videos')
-    .select('settings, channels(brand_kit)')
+    .select('account_id, settings, channels(brand_kit)')
     .eq('id', videoId)
     .single();
   if (vErr || !video) throw new Error(`load video: ${vErr?.message ?? 'not found'}`);
+  const accountId = video.account_id as string;
 
   const settings = (video.settings as Record<string, unknown>) ?? {};
   const fps = (settings.fps as number) ?? 30;
@@ -285,16 +321,23 @@ async function loadBrief(
   const ids = scenes.map((s) => s.id as string);
 
   const shotsByScene = new Map<string, string[]>();
+  let needsStock = false;
+  const resourceIdSet = new Set<string>();
   if (ids.length) {
     const { data: shotRows } = await admin
       .from('shots')
-      .select('scene_id, description, position')
+      .select('scene_id, description, position, source, resource_id')
       .in('scene_id', ids)
       .order('position');
     for (const sh of shotRows ?? []) {
       const list = shotsByScene.get(sh.scene_id as string) ?? [];
       list.push(sh.description as string);
       shotsByScene.set(sh.scene_id as string, list);
+      if (sh.source === 'resource' && sh.resource_id) {
+        resourceIdSet.add(sh.resource_id as string);
+      } else {
+        needsStock = true; // 'stock' (the default) — this shot wants real footage
+      }
     }
   }
 
@@ -319,7 +362,15 @@ async function loadBrief(
   });
 
   const durationInFrames = briefScenes.reduce((sum, s) => sum + s.durationInFrames, 0);
-  return { metadata: { width, height, fps, durationInFrames }, theme, assets, scenes: briefScenes };
+  return {
+    metadata: { width, height, fps, durationInFrames },
+    theme,
+    assets,
+    scenes: briefScenes,
+    accountId,
+    needsStock,
+    resourceIds: [...resourceIdSet],
+  };
 }
 
 // Produce the ephemeral render-time spec: same shape, asset urls signed.
@@ -350,6 +401,172 @@ async function writeCompositionCost(
     units: tokensIn + tokensOut,
     cost_usd: costUsd,
   });
+}
+
+// Generic cost_events writer (asset_search, smoke_frame, …). Looks the account up
+// off the render row so callers don't have to thread it.
+async function writeCostEvent(
+  admin: ReturnType<typeof createAdminClient>,
+  videoId: string,
+  renderId: string,
+  operation: string,
+  provider: string,
+  units: number,
+  costUsd: number,
+): Promise<void> {
+  const { data } = await admin.from('renders').select('account_id').eq('id', renderId).single();
+  const accountId = data?.account_id as string | undefined;
+  if (!accountId) return;
+  await admin.from('cost_events').insert({
+    account_id: accountId,
+    video_id: videoId,
+    render_id: renderId,
+    operation,
+    provider,
+    units,
+    cost_usd: costUsd,
+  });
+}
+
+// --- compose helpers (Phase 5) ---------------------------------------------
+
+// What a compose attempt yields. Single shape (not a union) so the agentic→
+// procedural fallback can spread + merge token counts cleanly.
+type ComposeOutcome = {
+  ok: boolean;
+  spec?: CompositionSpec;
+  errors?: Gate1Error[];
+  tokensIn: number;
+  tokensOut: number;
+  searches: number;
+};
+
+// The Phase-4 procedural path: one Sonnet call (no tools), parse → assemble →
+// Gate 1, with budget-2 validate-and-retry. brief already carries every resolved
+// asset (audio + any pre-resolved resources).
+async function proceduralCompose(brief: CompositionBrief): Promise<ComposeOutcome> {
+  const system = buildCompositionSystemPrompt(); // stockEnabled defaults false
+  const messages: { role: 'user' | 'assistant'; content: string }[] = [
+    { role: 'user', content: buildCompositionUserPrompt(brief) },
+  ];
+  let tokensIn = 0;
+  let tokensOut = 0;
+  let errors: Gate1Error[] = [];
+
+  for (let attempt = 0; attempt <= GATE1_RETRY_BUDGET; attempt++) {
+    // 32k headroom: adaptive thinking counts against max_tokens; effort 'medium'
+    // reins in over-thinking on what is a structured arrangement task.
+    const stream = anthropic().messages.stream({
+      model: COMPOSITION_MODEL,
+      max_tokens: 32000,
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'medium' },
+      system,
+      messages,
+    });
+    const msg = await stream.finalMessage();
+    if (msg.stop_reason === 'max_tokens') {
+      throw new Error('Composition hit max_tokens before completing the spec JSON.');
+    }
+    tokensIn += msg.usage.input_tokens ?? 0;
+    tokensOut += msg.usage.output_tokens ?? 0;
+    const text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+
+    const ai = parseComposition(text);
+    if (ai) {
+      const spec = assembleSpec(ai, brief);
+      const result = validateSpec(spec, brief.theme);
+      if (result.ok) return { ok: true, spec, tokensIn, tokensOut, searches: 0 };
+      errors = result.errors;
+    } else {
+      errors = [{ rule: 'json', detail: 'Output was not a single valid JSON object.' }];
+    }
+    messages.push({ role: 'assistant', content: text });
+    messages.push({
+      role: 'user',
+      content: `Your composition failed validation:\n${formatGate1Feedback(errors)}\nReturn ONLY the corrected JSON.`,
+    });
+  }
+  return { ok: false, errors, tokensIn, tokensOut, searches: 0 };
+}
+
+// The Phase-5 agentic path: the vision selection loop chooses stock, we resolve the
+// referenced assets into the manifest, assemble → Gate 1. On failure we re-run the
+// loop with the Gate-1 feedback (downloads are content-hash-cached, so cheap).
+async function agenticCompose(
+  brief: CompositionBrief,
+  admin: ReturnType<typeof createAdminClient>,
+  accountId: string,
+): Promise<ComposeOutcome> {
+  let tokensIn = 0;
+  let tokensOut = 0;
+  let searches = 0;
+  let errors: Gate1Error[] = [];
+  let feedback: string | undefined;
+
+  for (let attempt = 0; attempt <= GATE1_RETRY_BUDGET; attempt++) {
+    const result = await runAgenticComposition(brief, {
+      feedback,
+      callModel: async (system, msgs) => {
+        const stream = anthropic().messages.stream({
+          model: COMPOSITION_MODEL,
+          max_tokens: 32000,
+          thinking: { type: 'adaptive' },
+          output_config: { effort: 'medium' },
+          tools: [SEARCH_STOCK_TOOL as unknown as Anthropic.Tool],
+          system,
+          messages: msgs as unknown as Anthropic.MessageParam[],
+        });
+        const msg = await stream.finalMessage();
+        if (msg.stop_reason === 'max_tokens') {
+          throw new Error('Composition hit max_tokens before completing.');
+        }
+        return {
+          content: msg.content as unknown as LoopBlock[],
+          stopReason: msg.stop_reason,
+          usage: { inputTokens: msg.usage.input_tokens ?? 0, outputTokens: msg.usage.output_tokens ?? 0 },
+        };
+      },
+      searchStock: async (params) => {
+        searches += 1;
+        return searchStock(admin, accountId, params);
+      },
+    });
+    tokensIn += result.tokensIn;
+    tokensOut += result.tokensOut;
+
+    if (!result.ai) {
+      feedback = 'You did not output a final JSON composition. Stop calling tools and return ONLY the JSON object now.';
+      errors = [{ rule: 'json', detail: 'No final composition produced.' }];
+      continue;
+    }
+
+    // Resolve only the stock assets the AI actually referenced, then validate.
+    const plan = planStockResolution(collectReferencedAssetIds(result.ai), result.registry);
+    const stockEntries = await resolveStockAssets(admin, accountId, plan);
+    const fullBrief: CompositionBrief = { ...brief, assets: [...brief.assets, ...stockEntries] };
+    const spec = assembleSpec(result.ai, fullBrief);
+    const v = validateSpec(spec, brief.theme);
+    if (v.ok) return { ok: true, spec, tokensIn, tokensOut, searches };
+    errors = v.errors;
+    feedback = `Your composition failed validation:\n${formatGate1Feedback(errors)}\nReturn ONLY the corrected JSON.`;
+  }
+  return { ok: false, errors, tokensIn, tokensOut, searches };
+}
+
+// The narration/intent of the scene covering the mid frame — Gate 2's "what should
+// this moment show" context.
+function midSceneIntent(brief: CompositionBrief, spec: CompositionSpec): string {
+  const mid = Math.floor(spec.metadata.durationInFrames / 2);
+  let acc = 0;
+  for (const s of brief.scenes) {
+    acc += s.durationInFrames;
+    if (mid < acc) {
+      const hints = s.shotHints.length ? ` Shots: ${s.shotHints.join('; ')}` : '';
+      return `${s.narration}${hints}`.trim() || 'the video content';
+    }
+  }
+  return brief.scenes[0]?.narration ?? 'the video content';
 }
 
 type SpineParams = {
