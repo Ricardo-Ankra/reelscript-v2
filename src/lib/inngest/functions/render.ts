@@ -26,6 +26,7 @@ import {
 import { validateSpec, formatGate1Feedback, type Gate1Error } from '@/lib/composition/gate1';
 import type { CompositionSpec, AssetManifestEntry } from '@/lib/composition/spec';
 import { hasStockKeys, searchStock } from '@/lib/assets/search';
+import type { StockCandidate } from '@/lib/assets/candidate';
 import { resolveStockAssets, resolveResourceAssets } from '@/lib/assets/resolve';
 import { runGate2 } from '@/lib/composition/gate2';
 
@@ -529,7 +530,10 @@ async function agenticCompose(
       },
       searchStock: async (params) => {
         searches += 1;
-        return searchStock(admin, accountId, params);
+        const candidates = await searchStock(admin, accountId, params);
+        // Embed thumbnails as base64 so the vision model never has to fetch a URL
+        // itself (some provider CDNs block Anthropic's fetcher; empty URLs 400).
+        return attachThumbnails(candidates);
       },
     });
     tokensIn += result.tokensIn;
@@ -552,6 +556,66 @@ async function agenticCompose(
     feedback = `Your composition failed validation:\n${formatGate1Feedback(errors)}\nReturn ONLY the corrected JSON.`;
   }
   return { ok: false, errors, tokensIn, tokensOut, searches };
+}
+
+// Fetch each shown candidate's thumbnail server-side and attach it as base64 so the
+// vision model gets the bytes inline. Tolerant + capped: candidates without a
+// thumbnail, or whose thumbnail can't be fetched / is empty / is too large, are
+// dropped (the model only picks from what it can actually see). Never persisted —
+// the search-result cache stays free of base64.
+// Anthropic rejects any image over 2000px per side in a many-image request. We can't
+// resize without an image dependency, so read the dimensions from the PNG/JPEG header
+// and drop anything too large (Pexels thumbnails are already bounded server-side via
+// imgix; this is the universal safety net for other providers). Unknown formats pass.
+const MAX_THUMB_DIM = 1990;
+function imageDimensions(buf: Buffer): { w: number; h: number } | null {
+  if (buf.length >= 24 && buf[0] === 0x89 && buf[1] === 0x50) {
+    // PNG: IHDR width/height as big-endian uint32 at offsets 16/20.
+    return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+  }
+  if (buf.length >= 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    // JPEG: walk markers to the SOF segment, which carries height then width.
+    let o = 2;
+    while (o + 9 < buf.length) {
+      if (buf[o] !== 0xff) {
+        o += 1;
+        continue;
+      }
+      const marker = buf[o + 1];
+      const isSof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+      if (isSof) return { h: buf.readUInt16BE(o + 5), w: buf.readUInt16BE(o + 7) };
+      o += 2 + buf.readUInt16BE(o + 2);
+    }
+  }
+  return null;
+}
+
+async function attachThumbnails(candidates: StockCandidate[], max = 6): Promise<StockCandidate[]> {
+  const shown = candidates.slice(0, max).filter((c) => c.thumbnailUrl);
+  const fetched = await Promise.all(
+    shown.map(async (c): Promise<StockCandidate | null> => {
+      try {
+        const res = await fetch(c.thumbnailUrl);
+        if (!res.ok) return null;
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length === 0 || buf.length > 4_500_000) return null; // skip empty/oversized
+        const dims = imageDimensions(buf);
+        if (dims && (dims.w > MAX_THUMB_DIM || dims.h > MAX_THUMB_DIM)) return null; // too big for vision
+        const ct = res.headers.get('content-type') || '';
+        const mediaType = ct.includes('png')
+          ? 'image/png'
+          : ct.includes('webp')
+            ? 'image/webp'
+            : ct.includes('gif')
+              ? 'image/gif'
+              : 'image/jpeg';
+        return { ...c, thumbnailBase64: buf.toString('base64'), thumbnailMediaType: mediaType };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return fetched.filter((c): c is StockCandidate => c !== null);
 }
 
 // The narration/intent of the scene covering the mid frame — Gate 2's "what should

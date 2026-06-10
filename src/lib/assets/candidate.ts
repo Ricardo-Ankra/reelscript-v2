@@ -16,6 +16,11 @@ export interface StockCandidate {
   width: number;
   height: number;
   attribution: string; // e.g. "Photo by Jane Doe on Pexels" (spec 8.6)
+  // Transient (never cached): the thumbnail fetched server-side as base64 so the
+  // vision model gets the bytes inline rather than a URL it must download itself
+  // (some provider CDNs block Anthropic's fetcher; empty URLs fail outright).
+  thumbnailBase64?: string;
+  thumbnailMediaType?: string;
 }
 
 export interface StockSearchParams {

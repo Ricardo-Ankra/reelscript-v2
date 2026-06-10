@@ -57,13 +57,15 @@ export const SEARCH_STOCK_TOOL = {
 } as const;
 
 // An Anthropic content block (text or image); the tool result mixes both so the
-// model can read the candidate ids AND see their thumbnails.
+// model can read the candidate ids AND see their thumbnails. Image source is base64
+// when the thumbnail was pre-fetched server-side (preferred), else a URL.
 type ContentBlock =
   | { type: 'text'; text: string }
-  | { type: 'image'; source: { type: 'url'; url: string } };
+  | { type: 'image'; source: { type: 'url'; url: string } | { type: 'base64'; media_type: string; data: string } };
 
 // Build the search_stock tool result: a header + per-candidate (id line + thumbnail
-// image) so the vision model can look and pick. Capped to bound vision tokens.
+// image) so the vision model can look and pick. Capped to bound vision tokens. A
+// candidate with neither a base64 thumbnail nor a URL is shown without an image.
 export function buildStockToolResult(candidates: StockCandidate[], max = 6): ContentBlock[] {
   if (candidates.length === 0) {
     return [{ type: 'text', text: 'No candidates found. Refine the query, try the other kind, or compose this shot procedurally with Shape/Text.' }];
@@ -73,7 +75,11 @@ export function buildStockToolResult(candidates: StockCandidate[], max = 6): Con
   ];
   for (const c of candidates.slice(0, max)) {
     blocks.push({ type: 'text', text: `assetId="${c.assetId}" — ${c.kind} ${c.width}x${c.height}, ${c.attribution}` });
-    blocks.push({ type: 'image', source: { type: 'url', url: c.thumbnailUrl } });
+    if (c.thumbnailBase64) {
+      blocks.push({ type: 'image', source: { type: 'base64', media_type: c.thumbnailMediaType ?? 'image/jpeg', data: c.thumbnailBase64 } });
+    } else if (c.thumbnailUrl) {
+      blocks.push({ type: 'image', source: { type: 'url', url: c.thumbnailUrl } });
+    }
   }
   return blocks;
 }

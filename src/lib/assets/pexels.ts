@@ -8,6 +8,16 @@ import { makeAssetId, type StockCandidate, type StockSearchParams } from './cand
 // live smoke; pick a sensibly-sized download file and a small thumbnail for vision.
 const PER_PAGE = 8;
 
+// Pexels images are imgix-backed: serve a thumbnail bounded to <=1200px per side for
+// the vision model (the many-image request limit is 2000px). We strip any existing
+// query and set our own so params don't duplicate. Only the THUMBNAIL is bounded —
+// downloadUrl keeps full quality for the actual render.
+function sizedThumb(url: string | undefined): string {
+  if (!url) return '';
+  const base = url.split('?')[0];
+  return `${base}?auto=compress&cs=tinysrgb&w=1200&h=1200&fit=clip`;
+}
+
 type PexelsPhoto = {
   id: number;
   width: number;
@@ -45,7 +55,7 @@ export async function searchPexels(params: StockSearchParams): Promise<StockCand
         provider: 'pexels' as const,
         kind: 'image' as const,
         externalId: String(p.id),
-        thumbnailUrl: p.src.medium ?? p.src.tiny ?? p.src.large ?? '',
+        thumbnailUrl: sizedThumb(p.src.original ?? p.src.large2x ?? p.src.large ?? p.src.medium),
         downloadUrl: p.src.large2x ?? p.src.large ?? p.src.original ?? '',
         width: p.width,
         height: p.height,
@@ -63,7 +73,7 @@ export async function searchPexels(params: StockSearchParams): Promise<StockCand
       provider: 'pexels' as const,
       kind: 'video' as const,
       externalId: String(v.id),
-      thumbnailUrl: v.image,
+      thumbnailUrl: sizedThumb(v.image), // v.image is the full-res poster — bound it
       downloadUrl: best?.link ?? '',
       width: best?.width ?? v.width,
       height: best?.height ?? v.height,
