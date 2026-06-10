@@ -59,23 +59,31 @@ authoritative and the `docs/` copy remains the design record.
 ## Working agreement
 
 - **Build strictly in the build-plan phase order. Do not jump ahead.**
-- **Current phase: Phase 5 — Asset richness.** (Phase 0 — Foundations: complete &
-  verified 2026-06-04. Phase 1 — Render spine: complete & verified 2026-06-08.
-  Phase 2 — Script and scenes: complete & verified 2026-06-08. Phase 3 — Voice
-  synthesis: complete & verified 2026-06-09. **Phase 4 — Composition, the slice
-  closes: complete & verified 2026-06-09** — a prompt becomes a rendered MP4 with
-  voiceover, fully automatic (compose [Sonnet+thinking] → Gate 1 → durable spec →
-  sign assets → Lambda → finalize). Design docs under
-  `docs/superpowers/specs/2026-06-0*`.)
+- **Current phase: Phase 6 — Captions, kinetic text, music + remux.** (Phase 0 —
+  Foundations: complete & verified 2026-06-04. Phase 1 — Render spine: complete &
+  verified 2026-06-08. Phase 2 — Script and scenes: complete & verified 2026-06-08.
+  Phase 3 — Voice synthesis: complete & verified 2026-06-09. Phase 4 — Composition,
+  the slice closes: complete & verified 2026-06-09. **Phase 5 — Asset richness:
+  complete & verified 2026-06-10** — videos pull real, AI-chosen stock (Pexels +
+  Pixabay) via an agentic vision loop, with graceful degradation to procedural;
+  Gate 2 (smoke frame + vision QA) guards the render; attribution overlay ships.
+  Design docs under `docs/superpowers/specs/2026-06-0*`.)
   - **Phase 3 deferrals carried forward:** ElevenLabs key is an **env var**
     (`ELEVENLABS_API_KEY`), not `api_credentials` (Phase 8); synthesis is
     **fallback-only** (no per-model `voice_profiles` rows/UI — Phase 8); the voice
     concurrency cap is a plain chunk of 5 (shared governor — Phase 9); seed uses a
     hardcoded default voice.
-  - **Phase 4 deferrals carried forward:** **stock + agentic asset selection**
-    (Pexels/Pixabay + vision) and **Gate 2** (smoke frame + vision) are Phase 5 —
-    composition currently uses Text/Shape/FullBleed only (the 8.9 procedural path).
-    Captions / kinetic text / music + remux / attribution overlay are Phase 6.
+  - **Phase 5 deferrals carried forward:** the **channel-resource UI** is Phase 8 —
+    the server capability (signed upload, fast vision auto-tag, `resolveResourceAssets`)
+    ships, but with no UI to create resources or set a shot `source='resource'`, and
+    the compose prompt doesn't yet surface resource ids, **resource placement is
+    dormant** (the AI can't place pinned resources until the Phase-8 UI + prompt
+    binding land). `confirmResourceUpload` doesn't yet write a `resource_tagging`
+    cost_event. The stock **search-result + file-bytes caches** are live; the full
+    rate/concurrency **governor is Phase 9** (search uses a plain per-call count).
+    Gate-2 has **no auto-fix loop** (Phase 7) — it surfaces the failing frame only.
+  - **Phase 4 deferrals carried forward:** Captions / kinetic text / music + remux
+    are Phase 6 (the attribution overlay shipped in Phase 5).
     `model_routing` is Phase 8 (Sonnet pinned in code). The **render idempotency
     key is `hash(script_revision_id)`** (composition is non-deterministic), reused
     only for in-flight renders. The composition spec exists as a **durable
