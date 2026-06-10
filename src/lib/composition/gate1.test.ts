@@ -87,6 +87,17 @@ test('gate1: unresolved voiceover asset ref fails', () => {
   assert.ok(rules(validateSpec(s, theme)).includes('asset-ref'));
 });
 
+test('gate1: instance asset prop must resolve in the manifest', () => {
+  const s = validSpec();
+  // An Image referencing a real manifest asset passes; an unknown one fails.
+  s.assets.push({ id: 'img-1', kind: 'image', r2Key: 'assets/x.jpg' });
+  s.scenes[1].instances.push({ primitive: 'Image', props: { asset: 'img-1' }, layer: 1, startFrame: 0, durationInFrames: 60 });
+  assert.deepEqual(validateSpec(s, theme), { ok: true });
+
+  s.scenes[1].instances[1].props = { asset: 'img-missing' };
+  assert.ok(rules(validateSpec(s, theme)).includes('asset-ref'));
+});
+
 test('gate1: errors carry structured scene/instance/prop detail', () => {
   const s = validSpec();
   (s.scenes[0].instances[1].props as Record<string, unknown>).colorToken = 'nope';

@@ -50,10 +50,35 @@ const FULLBLEED: StarterPrimitive = {
   ],
 };
 
+// Mirrors remotion/primitives/Image.tsx — a still (stock/resource) with optional
+// Ken-Burns pan. The `asset` prop references a manifest asset id (spec 8.3).
+const IMAGE: StarterPrimitive = {
+  meta: { name: 'Image', version: 1, description: 'A real photo (stock or uploaded). At layer 0 with fit "cover" it is a full-bleed background; lay text/shapes over it.' },
+  propSchema: [
+    { name: 'asset', type: 'asset', state: 'active', required: true, description: 'The chosen image asset id from your stock search.' },
+    { name: 'fit', type: 'enum', enumValues: ['cover', 'contain'], state: 'active', default: 'cover', description: 'cover fills the frame (crops); contain fits inside.' },
+    { name: 'pan', type: 'boolean', state: 'active', default: true, description: 'Slow Ken-Burns zoom for life.' },
+  ],
+};
+
+// Mirrors remotion/primitives/Video.tsx — trimmed footage, muted (voiceover is the
+// audio).
+const VIDEO: StarterPrimitive = {
+  meta: { name: 'Video', version: 1, description: 'Real video footage (stock or uploaded), muted. At layer 0 fit "cover" it is a moving full-bleed background.' },
+  propSchema: [
+    { name: 'asset', type: 'asset', state: 'active', required: true, description: 'The chosen video asset id from your stock search.' },
+    { name: 'fit', type: 'enum', enumValues: ['cover', 'contain'], state: 'active', default: 'cover', description: 'cover fills the frame (crops); contain fits inside.' },
+    { name: 'mute', type: 'boolean', state: 'active', default: true, description: 'Keep muted so the voiceover is heard.' },
+    { name: 'trimStartSec', type: 'number', state: 'active', default: 0, description: 'Seconds into the source clip to start from.' },
+  ],
+};
+
 export const STARTER_REGISTRY: Record<string, StarterPrimitive> = {
   Text: TEXT,
   Shape: SHAPE,
   FullBleed: FULLBLEED,
+  Image: IMAGE,
+  Video: VIDEO,
 };
 
 export type StarterRegistry = typeof STARTER_REGISTRY;

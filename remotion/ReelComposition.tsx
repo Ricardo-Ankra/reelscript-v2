@@ -1,7 +1,7 @@
 import type { FC } from 'react';
 import { AbsoluteFill, Audio, Sequence, type CalculateMetadataFunction } from 'remotion';
 import { loadFont } from '@remotion/google-fonts/Poppins';
-import { ThemeContext } from '../src/lib/primitives/theme-context';
+import { ThemeContext, AssetContext, type ResolvedAsset } from '../src/lib/primitives/theme-context';
 import type { CompositionSpec } from '../src/lib/composition/spec';
 import { PRIMITIVES } from './primitives/registry';
 
@@ -53,9 +53,21 @@ export const ReelComposition: FC<ReelProps> = ({ spec }) => {
   const assetUrl = (assetId: string): string | undefined =>
     spec.assets.find((a) => a.id === assetId)?.url;
 
+  // Map media asset id → { signed url, kind } for the media primitives (Phase 5).
+  const assetMap: Record<string, ResolvedAsset> = {};
+  for (const a of spec.assets) {
+    if (a.url && (a.kind === 'image' || a.kind === 'video')) {
+      assetMap[a.id] = { url: a.url, kind: a.kind };
+    }
+  }
+  // Unique attribution credits for the licensing overlay (spec 8.6).
+  const attributions = [...new Set(spec.assets.map((a) => a.attribution).filter(Boolean) as string[])];
+  const attrFrom = Math.max(0, spec.metadata.durationInFrames - 90);
+
   return (
     <ThemeContext.Provider value={spec.theme}>
-      <AbsoluteFill style={{ backgroundColor: spec.theme.colors.background }}>
+      <AssetContext.Provider value={assetMap}>
+        <AbsoluteFill style={{ backgroundColor: spec.theme.colors.background }}>
         {spec.scenes.map((scene, sceneIndex) => {
           const from = sceneOffsets[sceneIndex];
           const voiceUrl = scene.voiceover ? assetUrl(scene.voiceover.assetId) : undefined;
@@ -82,7 +94,30 @@ export const ReelComposition: FC<ReelProps> = ({ spec }) => {
             </Sequence>
           );
         })}
-      </AbsoluteFill>
+
+        {/* Attribution overlay over the final ~90 frames (spec 8.6). */}
+        {attributions.length > 0 && (
+          <Sequence from={attrFrom} layout="none">
+            <div
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: '3%',
+                textAlign: 'center',
+                fontFamily: spec.theme.fonts.body,
+                fontSize: 22,
+                color: spec.theme.colors.bodyText,
+                opacity: 0.85,
+                padding: '0 6%',
+              }}
+            >
+              {attributions.join(' · ')}
+            </div>
+          </Sequence>
+        )}
+        </AbsoluteFill>
+      </AssetContext.Provider>
     </ThemeContext.Provider>
   );
 };

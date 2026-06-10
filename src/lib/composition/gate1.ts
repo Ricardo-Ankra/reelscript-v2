@@ -90,15 +90,22 @@ export function validateSpec(
         }
       }
 
-      // Semantic: token props must resolve in the baked theme.
+      // Semantic: token props must resolve in the baked theme; asset props must
+      // resolve in the manifest.
       for (const def of prim.propSchema) {
-        if (def.type !== 'token') continue;
         const raw = (inst.props ?? {})[def.name];
-        if (raw === undefined) continue; // omitted → component default applies
-        const group = def.tokenGroup ?? 'colors';
-        const bag = (theme as unknown as Record<string, Record<string, unknown>>)[group] ?? {};
-        if (typeof raw !== 'string' || !(raw in bag)) {
-          push({ scene: si, instance: ii, primitive: inst.primitive, prop: def.name, rule: 'token-ref', detail: `Scene ${si} ${inst.primitive} instance ${ii}: prop "${def.name}"=${JSON.stringify(raw)} is not a theme ${group} token (valid: ${Object.keys(bag).join(', ')}).` });
+        if (def.type === 'token') {
+          if (raw === undefined) continue; // omitted → component default applies
+          const group = def.tokenGroup ?? 'colors';
+          const bag = (theme as unknown as Record<string, Record<string, unknown>>)[group] ?? {};
+          if (typeof raw !== 'string' || !(raw in bag)) {
+            push({ scene: si, instance: ii, primitive: inst.primitive, prop: def.name, rule: 'token-ref', detail: `Scene ${si} ${inst.primitive} instance ${ii}: prop "${def.name}"=${JSON.stringify(raw)} is not a theme ${group} token (valid: ${Object.keys(bag).join(', ')}).` });
+          }
+        } else if (def.type === 'asset') {
+          if (raw === undefined) continue;
+          if (typeof raw !== 'string' || !assetIds.has(raw)) {
+            push({ scene: si, instance: ii, primitive: inst.primitive, prop: def.name, rule: 'asset-ref', detail: `Scene ${si} ${inst.primitive} instance ${ii}: prop "${def.name}"=${JSON.stringify(raw)} is not a manifest asset id. Use an assetId returned by search_stock.` });
+          }
         }
       }
 

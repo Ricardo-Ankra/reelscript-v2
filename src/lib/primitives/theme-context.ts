@@ -15,3 +15,14 @@ export function useTheme(): Theme {
   }
   return theme;
 }
+
+// Resolved media assets, keyed by the manifest asset id (Phase 5). Media primitives
+// (Image/Video) receive an asset id in their props and look up the signed URL + kind
+// here at render time — a primitive is never handed a URL at author time (spec 10.3).
+export type ResolvedAsset = { url: string; kind: 'image' | 'video' | 'audio' };
+export const AssetContext = createContext<Record<string, ResolvedAsset>>({});
+
+export function useAsset(assetId: string | undefined): ResolvedAsset | undefined {
+  const map = useContext(AssetContext);
+  return assetId ? map[assetId] : undefined;
+}

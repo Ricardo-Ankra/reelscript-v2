@@ -22,12 +22,13 @@ export interface CompositionMetadata {
   durationInFrames: number;
 }
 
-/** An asset the renderer must fetch. Phase 4: voiceover only (image/video later). */
+/** An asset the renderer must fetch: voiceover (Phase 3), or image/video (Phase 5). */
 export interface AssetManifestEntry {
-  id: string; // referenced by scenes
-  kind: 'audio';
+  id: string; // referenced by scenes (voiceover) or instance `asset` props (media)
+  kind: 'audio' | 'image' | 'video';
   r2Key: string; // durable pointer — the permanent record
   url?: string; // signed R2 URL — present ONLY in the render-time ephemeral copy
+  attribution?: string; // stock licensing credit (spec 8.6), for the overlay
 }
 
 export interface CompositionScene {

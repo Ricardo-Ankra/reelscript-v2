@@ -55,4 +55,22 @@ export const serverEnv = {
       return required('ELEVENLABS_API_KEY');
     },
   },
+  // Stock providers (Phase 5). Optional: a channel "has stock" only if the key is
+  // set; absent keys drive the graceful-degradation path (spec 8.9). Read via
+  // optional() so composition can branch on presence without throwing.
+  pexels: {
+    get apiKey() {
+      return optional('PEXELS_API_KEY');
+    },
+  },
+  pixabay: {
+    get apiKey() {
+      return optional('PIXABAY_API_KEY');
+    },
+  },
 };
+
+function optional(name: string): string | undefined {
+  const v = process.env[name];
+  return v && v.trim() ? v : undefined;
+}
