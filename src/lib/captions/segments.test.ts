@@ -23,7 +23,6 @@ function align(words: { t: string; s: number; e: number }[]): TtsAlignment {
       characters.push(w.t[i]);
       // linearly spread the word's window across its characters
       character_start_times_seconds.push(w.s + ((w.e - w.s) * i) / n);
-      character_start_times_seconds[character_start_times_seconds.length - 1];
       character_end_times_seconds.push(w.s + ((w.e - w.s) * (i + 1)) / n);
     }
     if (wi < words.length - 1) {
