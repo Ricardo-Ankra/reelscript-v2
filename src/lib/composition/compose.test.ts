@@ -9,6 +9,7 @@ import {
   runAgenticComposition,
   buildStockToolResult,
   collectReferencedAssetIds,
+  collectKineticSpans,
   planStockResolution,
   SEARCH_STOCK_TOOL,
   type CompositionBrief,
@@ -308,4 +309,53 @@ test('runAgenticComposition: an unknown tool call is rejected, loop continues', 
   const toolResultTurn = fedBack[2];
   const block = (toolResultTurn.content as Array<Record<string, unknown>>)[0];
   assert.equal(block.is_error, true);
+});
+
+// --- Phase 6: kinetic text prompt binding + span collection -----------------
+
+test('system prompt forbids KineticText when kinetic is disabled', () => {
+  const sys = buildCompositionSystemPrompt(undefined, { kinetic: { enabled: false, usage: 'sparing' } });
+  assert.ok(/do not use the kinetictext/i.test(sys));
+});
+
+test('system prompt guides frame-aligned bounce|pop emphasis when kinetic is enabled', () => {
+  const sys = buildCompositionSystemPrompt(undefined, { kinetic: { enabled: true, usage: 'sparing' } });
+  assert.ok(/kinetic text/i.test(sys));
+  assert.ok(sys.includes('bounce') && sys.includes('pop'));
+  assert.ok(/sparingly/i.test(sys));
+  assert.ok(/lower third is reserved for captions/i.test(sys));
+});
+
+test('user prompt lists spoken-word frame windows only when kinetic is enabled', () => {
+  const kBrief: CompositionBrief = {
+    ...brief,
+    kinetic: { enabled: true, usage: 'sparing' },
+    scenes: [{ ...brief.scenes[0], words: [{ t: 'Hello', s: 0, e: 12 }, { t: 'there', s: 12, e: 24 }] }, brief.scenes[1]],
+  };
+  const u = buildCompositionUserPrompt(kBrief);
+  assert.ok(u.includes('Hello@0-12'));
+  // disabled => no word windows
+  assert.ok(!buildCompositionUserPrompt(brief).includes('@0-12'));
+});
+
+test('collectKineticSpans: absolute frame windows across scene offsets', () => {
+  const spec = assembleSpec(
+    {
+      scenes: [
+        { sceneId: 'scene-1', instances: [{ primitive: 'KineticText', props: { text: 'Hi' }, layer: 2, startFrame: 10, durationInFrames: 20 }] },
+        { sceneId: 'scene-2', instances: [{ primitive: 'KineticText', props: { text: 'Bye' }, layer: 2, startFrame: 5, durationInFrames: 15 }] },
+      ],
+    },
+    brief,
+  );
+  // scene-1 offset 0 → [10,30); scene-2 offset 90 → [95,110)
+  assert.deepEqual(collectKineticSpans(spec), [
+    { fromFrame: 10, toFrame: 30 },
+    { fromFrame: 95, toFrame: 110 },
+  ]);
+});
+
+test('collectKineticSpans: no KineticText → no spans', () => {
+  const spec = assembleSpec({ scenes: [{ sceneId: 'scene-1', instances: [{ primitive: 'Text', props: { text: 'x' }, layer: 1, startFrame: 0, durationInFrames: 10 }] }] }, brief);
+  assert.deepEqual(collectKineticSpans(spec), []);
 });

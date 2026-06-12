@@ -43,6 +43,8 @@ export function buildGate2QaPrompt(sceneIntent: string): string {
     '- It is blank, a solid colour, or obviously a broken / empty render.',
     '- On-screen text is cut off, overflowing the frame edges, or overlapping illegibly.',
     '- Text is unreadable against its background (clashing or low-contrast colours).',
+    '- Large animated emphasis text collides with or overlaps the captions at the bottom',
+    '  (a residual backstop check — placement should already prevent this).',
     "- The frame clearly does not match the intended content above.",
     'Otherwise pass it. Minor aesthetic preferences are NOT failures.',
     '',
