@@ -17,10 +17,12 @@ import {
   assembleSpec,
   runAgenticComposition,
   collectReferencedAssetIds,
+  collectKineticSpans,
   planStockResolution,
   SEARCH_STOCK_TOOL,
   type CompositionBrief,
   type SceneBrief,
+  type KineticConfig,
   type LoopBlock,
 } from '@/lib/composition/compose';
 import { validateSpec, formatGate1Feedback, type Gate1Error } from '@/lib/composition/gate1';
@@ -29,6 +31,19 @@ import { hasStockKeys, searchStock } from '@/lib/assets/search';
 import type { StockCandidate } from '@/lib/assets/candidate';
 import { resolveStockAssets, resolveResourceAssets } from '@/lib/assets/resolve';
 import { runGate2 } from '@/lib/composition/gate2';
+import {
+  buildCaptions,
+  suppressDuringSpans,
+  reconstructWords,
+  toSrt,
+  toVtt,
+  type SceneCaptionInput,
+  type CaptionSegment,
+  type CaptionStyle,
+} from '@/lib/captions/segments';
+import { selectMusicTrack, type MusicTrack } from '@/lib/music/select';
+import { canonicalizeMusicParams, type MusicParams } from '@/lib/music/params';
+import type { TtsAlignment } from '@/lib/voice/alignment';
 
 // =============================================================================
 // Phase 4 — the render pipeline (spec 13.1). One function: compose → gate1 →
@@ -116,10 +131,30 @@ export const renderVideo = inngest.createFunction(
       if (!outcome.ok || !outcome.spec) {
         return { ok: false as const, errors: outcome.errors ?? [] };
       }
+
+      // Captions (system-built, spec 8.5): full segments feed the SRT/VTT sidecars;
+      // the BURNT track is the full set minus any segment overlapping a kinetic span
+      // (collision prevention by construction). Music is NOT added to the spec — the
+      // render stays voiceover-only and the ffmpeg re-mux owns music (spec 10.1).
+      const spec = outcome.spec;
+      let fullCaptions: CaptionSegment[] = [];
+      if (brief.captionsEnabled) {
+        fullCaptions = buildCaptions(brief.captionInputs, {
+          fps: brief.metadata.fps,
+          maxCharsPerLine: brief.maxCharsPerLine,
+        });
+        spec.captions = suppressDuringSpans(fullCaptions, collectKineticSpans(spec));
+        if (brief.captionStyle) spec.captionStyle = brief.captionStyle;
+      }
+
       return {
         ok: true as const,
-        spec: outcome.spec,
-        midSceneIntent: midSceneIntent(briefWithResources, outcome.spec),
+        spec,
+        midSceneIntent: midSceneIntent(briefWithResources, spec),
+        captionsEnabled: brief.captionsEnabled,
+        fullCaptions,
+        musicTrackId: brief.musicTrackId,
+        musicParams: brief.musicParams,
       };
     });
 
@@ -140,6 +175,15 @@ export const renderVideo = inngest.createFunction(
       const key = `specs/${renderId}.json`;
       await putObject(key, JSON.stringify(durableSpec), 'application/json');
       await admin.from('renders').update({ composition_spec_r2_key: key }).eq('id', renderId);
+    });
+
+    // Persist the music choice + mix params on the render (the re-mux + the Music
+    // panel read these; null track ⇒ music off ⇒ no re-mux step).
+    await step.run('persist-music', async () => {
+      await admin
+        .from('renders')
+        .update({ music_track_id: composed.musicTrackId, music_params: composed.musicParams })
+        .eq('id', renderId);
     });
 
     // --- resolveAssets (ephemeral signed copy Lambda fetches) ----------------
@@ -192,19 +236,17 @@ export const renderVideo = inngest.createFunction(
       framesPerLambda: Math.max(Math.ceil(total / 4), 50), // cap chunk concurrency
     });
 
-    // --- finalize ------------------------------------------------------------
-    await step.run('finalize', async () => {
+    // --- finalize the BASE (voiceover-only, captions + kinetic burnt in) ------
+    // The Lambda output is the base MP4 — NO music (spec 10.1). Music, if any, is
+    // mixed onto it by the ffmpeg re-mux below.
+    const baseKey = `renders/${renderId}.base.mp4`;
+    await step.run('finalize-base', async () => {
       const res = await fetch(outputUrl.url);
       if (!res.ok) throw new Error(`fetch rendered mp4: ${res.status}`);
       const bytes = Buffer.from(await res.arrayBuffer());
-      const key = `renders/${renderId}.mp4`;
-      await putObject(key, bytes, 'video/mp4');
+      await putObject(baseKey, bytes, 'video/mp4');
 
-      const { data: renderRow } = await admin
-        .from('renders')
-        .select('account_id')
-        .eq('id', renderId)
-        .single();
+      const { data: renderRow } = await admin.from('renders').select('account_id').eq('id', renderId).single();
       const accountId = renderRow?.account_id as string | undefined;
       if (accountId && outputUrl.costUsd > 0) {
         await admin.from('cost_events').insert({
@@ -217,16 +259,41 @@ export const renderVideo = inngest.createFunction(
           cost_usd: outputUrl.costUsd,
         });
       }
+      await admin.from('renders').update({ base_output_r2_key: baseKey }).eq('id', renderId);
+    });
 
+    // --- caption sidecars (always exported when captions are on, spec 4.2.1) ---
+    if (composed.captionsEnabled) {
+      await step.run('caption-sidecars', async () => {
+        const fps = durableSpec.metadata.fps;
+        await putObject(`captions/${renderId}.srt`, toSrt(composed.fullCaptions, fps), 'application/x-subrip');
+        await putObject(`captions/${renderId}.vtt`, toVtt(composed.fullCaptions, fps), 'text/vtt');
+      });
+    }
+
+    // --- music: re-mux onto the base (spec 10.1), or finalize the base as-is ---
+    if (composed.musicTrackId) {
+      await step.run('emit-remux', async () => {
+        const { data: renderRow } = await admin.from('renders').select('account_id').eq('id', renderId).single();
+        const accountId = renderRow?.account_id as string;
+        await admin.from('renders').update({ status: 'encoding' }).eq('id', renderId);
+        await admin.from('jobs').update({ status: 'running', phase: 'encoding' }).eq('id', jobId);
+        // The remux function owns the final output + completing the job (spec 10.1).
+        await inngest.send({ name: 'music/remux', data: { renderId, accountId, videoId, jobId } });
+      });
+      return { renderId, ok: true, music: true as const };
+    }
+
+    await step.run('finalize', async () => {
       await admin
         .from('renders')
-        .update({ status: 'complete', output_r2_key: key, render_date: new Date().toISOString() })
+        .update({ status: 'complete', output_r2_key: baseKey, render_date: new Date().toISOString() })
         .eq('id', renderId);
       await admin.from('videos').update({ current_render_id: renderId }).eq('id', videoId);
       await admin.from('jobs').update({ status: 'complete', phase: 'done' }).eq('id', jobId);
     });
 
-    return { renderId, ok: true };
+    return { renderId, ok: true, music: false as const };
   },
 );
 
@@ -286,12 +353,20 @@ const DIMS: Record<string, { width: number; height: number }> = {
   '16:9': { width: 1920, height: 1080 },
 };
 
-// The brief plus the Phase-5 routing facts: which account owns it, whether any shot
-// wants stock (drives the agentic branch), and the explicit resource ids to resolve.
+// The brief plus the Phase-5 routing facts (account, stock need, resource ids) and
+// the Phase-6 polish facts: caption inputs/style, and the music selection. Captions
+// are built AFTER compose (suppression needs the kinetic spans), so loadBrief returns
+// the raw per-scene inputs rather than finished segments.
 type LoadedBrief = CompositionBrief & {
   accountId: string;
   needsStock: boolean;
   resourceIds: string[];
+  captionsEnabled: boolean;
+  captionStyle?: CaptionStyle;
+  captionInputs: SceneCaptionInput[];
+  maxCharsPerLine?: number;
+  musicTrackId: string | null;
+  musicParams: MusicParams;
 };
 
 // Load everything the composition needs from the DB and shape it into a brief.
@@ -301,21 +376,48 @@ async function loadBrief(
 ): Promise<LoadedBrief> {
   const { data: video, error: vErr } = await admin
     .from('videos')
-    .select('account_id, settings, channels(brand_kit)')
+    .select('account_id, channel_id, settings, channels(brand_kit, defaults)')
     .eq('id', videoId)
     .single();
   if (vErr || !video) throw new Error(`load video: ${vErr?.message ?? 'not found'}`);
   const accountId = video.account_id as string;
+  const channelId = video.channel_id as string;
 
   const settings = (video.settings as Record<string, unknown>) ?? {};
   const fps = (settings.fps as number) ?? 30;
   const ratio = (settings.aspect_ratio as string) ?? '9:16';
   const { width, height } = DIMS[ratio] ?? DIMS['9:16'];
-  const theme = bakeTheme((video.channels as { brand_kit?: unknown } | null)?.brand_kit as never);
+  const channel = (video.channels as { brand_kit?: Record<string, unknown>; defaults?: Record<string, unknown> } | null) ?? {};
+  const brandKit = channel.brand_kit ?? {};
+  const channelDefaults = channel.defaults ?? {};
+  const theme = bakeTheme(brandKit as never);
+
+  // Phase-6 polish settings (no settings UI yet — Phase 8 — so these come from the
+  // video's settings, then the channel defaults, then a code default).
+  // Captions: per-video, defaulting on for 9:16/1:1 and off for 16:9 (spec 4.2.1).
+  const captionsEnabled =
+    typeof settings.captions_on === 'boolean' ? (settings.captions_on as boolean) : ratio !== '16:9';
+  const captionStyle = (brandKit.caption_style as CaptionStyle | undefined) ?? undefined;
+  // Kinetic usage off|sparing|liberal (spec 4.2.2).
+  const kineticUsageRaw =
+    (settings.kinetic_text_usage as string) ?? (channelDefaults.kinetic_text_usage as string) ?? 'sparing';
+  const kinetic: KineticConfig = {
+    enabled: kineticUsageRaw !== 'off',
+    usage: kineticUsageRaw === 'liberal' ? 'liberal' : 'sparing',
+  };
+  // Music opt-in (spec 4.2.3) + the mix params (defaults until the Phase-8 panel).
+  const musicOn =
+    typeof settings.music_on === 'boolean'
+      ? (settings.music_on as boolean)
+      : typeof channelDefaults.music_on === 'boolean'
+        ? (channelDefaults.music_on as boolean)
+        : false;
+  const mood = (settings.mood as string) ?? 'neutral';
+  const musicParams = canonicalizeMusicParams((settings.music_params as Partial<MusicParams>) ?? {});
 
   const { data: sceneRows } = await admin
     .from('scenes')
-    .select('id, position, narration, duration_seconds, audio_r2_key')
+    .select('id, position, narration, duration_seconds, audio_r2_key, word_alignments')
     .eq('video_id', videoId)
     .order('position');
   const scenes = sceneRows ?? [];
@@ -343,6 +445,8 @@ async function loadBrief(
   }
 
   const assets: AssetManifestEntry[] = [];
+  const captionInputs: SceneCaptionInput[] = [];
+  let offset = 0; // cumulative absolute start frame
   const briefScenes: SceneBrief[] = scenes.map((s) => {
     const position = s.position as number;
     const durationSeconds = Number(s.duration_seconds) || 2;
@@ -352,6 +456,18 @@ async function loadBrief(
       voiceoverAssetId = `vo-${position}`;
       assets.push({ id: voiceoverAssetId, kind: 'audio', r2Key: s.audio_r2_key as string });
     }
+    const alignment = (s.word_alignments as TtsAlignment | null) ?? null;
+    captionInputs.push({ alignment, startFrame: offset });
+    // Spoken words as SCENE-RELATIVE frame windows, for kinetic alignment.
+    let words: SceneBrief['words'];
+    if (kinetic.enabled && alignment) {
+      words = reconstructWords(alignment).map((w) => ({
+        t: w.text,
+        s: Math.round(w.startSec * fps),
+        e: Math.round(w.endSec * fps),
+      }));
+    }
+    offset += durationInFrames;
     return {
       id: s.id as string,
       position,
@@ -359,18 +475,39 @@ async function loadBrief(
       shotHints: shotsByScene.get(s.id as string) ?? [],
       durationInFrames,
       voiceoverAssetId,
+      ...(words ? { words } : {}),
     };
   });
 
-  const durationInFrames = briefScenes.reduce((sum, s) => sum + s.durationInFrames, 0);
+  const durationInFrames = offset;
+
+  // Music selection (spec 4.2.3): pick from the channel's seeded library by mood. The
+  // chosen id is mixed in by the ffmpeg re-mux, not baked into the render.
+  let musicTrackId: string | null = null;
+  if (musicOn) {
+    const { data: trackRows } = await admin.from('music_tracks').select('id, mood_tags').eq('channel_id', channelId);
+    const tracks: MusicTrack[] = (trackRows ?? []).map((t) => ({
+      id: t.id as string,
+      moodTags: (t.mood_tags as string[]) ?? [],
+    }));
+    musicTrackId = selectMusicTrack(mood, tracks)?.id ?? null;
+  }
+
   return {
     metadata: { width, height, fps, durationInFrames },
     theme,
     assets,
     scenes: briefScenes,
+    kinetic,
     accountId,
     needsStock,
     resourceIds: [...resourceIdSet],
+    captionsEnabled,
+    captionStyle,
+    captionInputs,
+    maxCharsPerLine: captionStyle?.maxCharsPerLine,
+    musicTrackId,
+    musicParams,
   };
 }
 
