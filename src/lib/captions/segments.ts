@@ -67,8 +67,8 @@ export function reconstructWords(alignment: TtsAlignment): Word[] {
       }
       continue;
     }
-    const startSec = starts[i] ?? cur?.startSec ?? 0;
-    const endSec = ends[i] ?? startSec;
+    const startSec: number = starts[i] ?? cur?.startSec ?? 0;
+    const endSec: number = ends[i] ?? startSec;
     if (!cur) cur = { text: ch, startSec, endSec };
     else {
       cur.text += ch;

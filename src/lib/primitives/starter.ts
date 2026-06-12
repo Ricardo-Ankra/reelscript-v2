@@ -73,12 +73,31 @@ const VIDEO: StarterPrimitive = {
   ],
 };
 
+// Mirrors remotion/primitives/KineticText.tsx — large, animated, brand-styled
+// emphasis words frame-aligned to the voiceover (spec 4.2.2 / 8.4). AI-authored,
+// unlike captions. `animation` is a CLOSED two-value enum (bounce ← <excited>, pop
+// ← <emphatic>) — the only motions that ship in V1. `position` deliberately omits
+// the lower third: captions own that band exclusively, so kinetic text is forbidden
+// from it by construction (collision prevention, not Gate-2 detection). Legibility
+// (stroke/shadow/scrim) is a system bake in the component, not an authored prop.
+const KINETICTEXT: StarterPrimitive = {
+  meta: { name: 'KineticText', version: 1, description: 'A large animated emphasis word/phrase on the Display font, frame-aligned to a spoken word. Use SPARINGLY at moments of emphasis — a few words, never the whole sentence. Not a caption.' },
+  propSchema: [
+    { name: 'text', type: 'string', state: 'active', required: true, description: 'The short emphasis word or phrase (1–4 words) — a key word actually spoken at this frame.' },
+    { name: 'animation', type: 'enum', enumValues: ['bounce', 'pop'], state: 'active', default: 'pop', description: 'bounce = drops/springs in (excited); pop = scales up (emphatic). These are the ONLY two; never invent another.' },
+    { name: 'position', type: 'enum', enumValues: ['upper', 'center'], state: 'active', default: 'center', description: 'Where it sits. The lower third is reserved for captions — you cannot place kinetic text there.' },
+    { name: 'accentToken', type: 'token', tokenGroup: 'colors', state: 'active', default: 'accent', description: 'Accent colour token for the word.' },
+    { name: 'fontSizePx', type: 'number', state: 'active', default: 150, description: 'Font size in pixels (frame is 1080 wide for 9:16). Big — this is an emphasis beat.' },
+  ],
+};
+
 export const STARTER_REGISTRY: Record<string, StarterPrimitive> = {
   Text: TEXT,
   Shape: SHAPE,
   FullBleed: FULLBLEED,
   Image: IMAGE,
   Video: VIDEO,
+  KineticText: KINETICTEXT,
 };
 
 export type StarterRegistry = typeof STARTER_REGISTRY;
