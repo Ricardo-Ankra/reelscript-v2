@@ -19,7 +19,9 @@
     "setup:r2-cors": "node --env-file=.env.local scripts/set-r2-cors.mjs",
     "smoke:assets": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/asset-smoke.ts",
     "seed:music": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/seed-music.ts",
-    "drive:render": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/drive-render.ts"
+    "drive:render": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/drive-render.ts",
+    "drive:remux": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/drive-remux.ts",
+    "inspect:render": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/inspect-render.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",
