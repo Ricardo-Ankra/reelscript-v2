@@ -3,12 +3,17 @@
 A dedicated ffmpeg Lambda that mixes the chosen music track onto the voiceover-only
 base MP4 — the audio-only re-mux that lets a music change re-run in **seconds without
 re-rendering**. It is a *dumb executor*: the Reelscript worker builds the ffmpeg argv
-(the ducking filter graph, in `src/lib/music/ffmpeg.ts`, unit-tested) and POSTs it
-with signed R2 in/out URLs; this Lambda downloads, runs ffmpeg, and PUTs the result.
+(the ducking filter graph, in `src/lib/music/ffmpeg.ts`, unit-tested) and invokes this
+Lambda with signed R2 in/out URLs; the Lambda downloads, runs ffmpeg, and PUTs the result.
+
+**Invoked via the Lambda SDK (SigV4) — NOT a public Function URL.** This AWS account
+blocks public Lambda Function URLs (persistent 403), and SDK invocation is more secure
+anyway (no public endpoint). `src/lib/music/remux-invoke.ts` calls `InvokeCommand` with
+the `REMOTION_AWS_*` creds and a synthetic event carrying the shared-secret header.
 
 ## Contract
 
-`POST <Function URL>` with header `x-remux-secret: <REMUX_LAMBDA_SECRET>` and body:
+Invoke `reelscript-music-remux` with an event whose `body` is JSON:
 
 ```json
 {
@@ -19,90 +24,58 @@ with signed R2 in/out URLs; this Lambda downloads, runs ffmpeg, and PUTs the res
 }
 ```
 
-Returns `{ "ok": true, "durationMs": <n> }` on success, `{ "ok": false, "error": … }` otherwise.
+and header `x-remux-secret: <REMUX_LAMBDA_SECRET>`. Returns `{ "ok": true, "durationMs": <n> }`
+on success (HTTP-style `statusCode` in the handler response), else `{ "ok": false, "error": … }`.
 
-## Deploy (human checkpoint — needs Docker + AWS CLI)
+## Deploy (needs Docker + AWS CLI)
 
-Build for **linux/amd64**, push to ECR, create the function from the image, and add a
-Function URL. Region must match your Remotion Lambda (`AWS_REGION`).
-
-> **Before you start (env-specific notes):**
-> - **Start Docker Desktop** — the daemon must be running (`docker info` should succeed).
-> - **Install AWS CLI v2** if you don't have it: https://aws.amazon.com/cli/
-> - **Use a PRIVILEGED AWS identity, NOT the `REMOTION_AWS_*` keys.** Those keys are
->   least-privilege (Remotion-scoped) and cannot create ECR repos, Lambda functions, or
->   IAM roles. Configure the CLI with an admin profile for this account
->   (`aws configure --profile admin`, then add `--profile admin` to each command below).
-> - Account `151929428673`, region `eu-central-1` (your current setup).
+> **Before you start:**
+> - **Start Docker Desktop** (`docker info` must succeed).
+> - **AWS CLI** with a profile that can create ECR repos + Lambda functions + IAM roles.
+>   The `REMOTION_AWS_*` keys are least-privilege — either attach `AdministratorAccess`
+>   to that user *temporarily* for the deploy (then detach + add a narrow
+>   `lambda:InvokeFunction` inline policy), or use a separate admin profile.
+> - Region must match the Remotion Lambda (`AWS_REGION`, e.g. `eu-central-1`).
 
 ```bash
-# From repo root. Set these first:
+# From repo root.
 export AWS_REGION=eu-central-1
-export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --profile reelscript-admin)
 export REPO=reelscript-music-remux
-export SECRET="$(openssl rand -hex 24)"   # save this — it goes in .env.local too
+export REG=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
 # 1) ECR repo + login
-aws ecr create-repository --repository-name "$REPO" --region "$AWS_REGION" 2>/dev/null || true
-aws ecr get-login-password --region "$AWS_REGION" \
-  | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+aws ecr create-repository --repository-name "$REPO" --region "$AWS_REGION" --profile reelscript-admin 2>/dev/null || true
+aws ecr get-login-password --region "$AWS_REGION" --profile reelscript-admin \
+  | docker login --username AWS --password-stdin "$REG"
 
-# 2) Build + push (amd64)
-docker buildx build --platform linux/amd64 -t "$REPO" lambda/music-remux --load
-docker tag "$REPO:latest" "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO:latest"
-docker push "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO:latest"
-
-# 3) Execution role — needs ONLY AWSLambdaBasicExecutionRole (R2 is reached via signed
-#    URLs, so the function needs no AWS data permissions). Create one if you have none:
-cat > /tmp/trust.json <<'JSON'
-{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}
-JSON
-aws iam create-role --role-name reelscript-remux-role \
-  --assume-role-policy-document file:///tmp/trust.json 2>/dev/null || true
-aws iam attach-role-policy --role-name reelscript-remux-role \
-  --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-export ROLE_ARN=arn:aws:iam::$ACCOUNT_ID:role/reelscript-remux-role
-# (IAM role propagation takes a few seconds; if create-function 400s on the role, wait + retry.)
-
-# 4) Create the function (2 GB RAM, 4 GB /tmp, 300s) and set the secret
-aws lambda create-function --function-name "$REPO" \
-  --package-type Image \
-  --code ImageUri="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO:latest" \
-  --role "$ROLE_ARN" --timeout 300 --memory-size 2048 \
-  --ephemeral-storage Size=4096 \
-  --environment "Variables={REMUX_LAMBDA_SECRET=$SECRET}" \
-  --region "$AWS_REGION"
-
-# 5) Public Function URL (auth handled by our secret header)
-aws lambda create-function-url-config --function-name "$REPO" \
-  --auth-type NONE --region "$AWS_REGION"
-aws lambda add-permission --function-name "$REPO" \
-  --statement-id FnUrlPublic --action lambda:InvokeFunctionUrl \
-  --principal '*' --function-url-auth-type NONE --region "$AWS_REGION"
-
-# 6) Print the URL — paste into .env.local with the secret:
-aws lambda get-function-url-config --function-name "$REPO" \
-  --region "$AWS_REGION" --query FunctionUrl --output text
+# 2) Build (provenance OFF — Lambda rejects buildx's attestation manifest) + push
+docker buildx build --platform linux/amd64 --provenance=false -t "$REPO:latest" --load lambda/music-remux
+docker tag "$REPO:latest" "$REG/$REPO:latest"
+docker push "$REG/$REPO:latest"
 ```
 
-Then in `.env.local` (and `.env.hosted`):
+Then the AWS-side (IAM role → function → env wiring) is automated — it creates the role,
+the function (2 GB RAM, 4 GB /tmp, 300 s), generates/reuses the secret, and writes
+`REMUX_LAMBDA_FUNCTION_NAME` + `REMUX_LAMBDA_SECRET` into `.env.local`. **No Function URL
+is created**; any leftover public URL from an earlier attempt is removed.
 
-```
-REMUX_LAMBDA_URL=https://….lambda-url.eu-central-1.on.aws/
-REMUX_LAMBDA_SECRET=<the $SECRET from above>
+```bash
+node --env-file=.env.local scripts/deploy-music-lambda.mjs   # uses --profile reelscript-admin
 ```
 
 **Then restart the Next dev server** so it picks up the new env (it reads `.env.local`
-at startup): stop the running `npm run dev` and start it again. The Inngest dev server
-can keep running. Tell me once it's back up and I'll drive the music verification.
+at startup): stop `npm run dev` and start it again. The Inngest dev server can keep running.
 
-To update after a code change: re-run steps 2 then
-`aws lambda update-function-code --function-name "$REPO" --image-uri …:latest --region "$AWS_REGION"`.
+To update after a code change: re-run step 2, then re-run the deploy script (it
+`update-function-code`s when the function already exists).
 
-## Smoke test
+## Verify
+
+Drive it headlessly (no browser):
 
 ```bash
-curl -sS -X POST "$REMUX_LAMBDA_URL" -H "x-remux-secret: $REMUX_LAMBDA_SECRET" \
-  -H 'content-type: application/json' \
-  -d '{"args":["-y","-f","lavfi","-i","sine=frequency=440:duration=1","/tmp/out.mp4"],"inputs":{},"outputs":{"/tmp/out.mp4":"<a signed PUT url>"}}'
+npm run drive:render -- <videoId>            # music_on video → select → base → re-mux → final .mp4
+npm run drive:remux  -- <renderId> --reroll  # reroll the track, time the re-mux (expect seconds)
+npm run inspect:render -- <renderId>         # captions/kinetic/sidecars + the music_remux cost line
 ```

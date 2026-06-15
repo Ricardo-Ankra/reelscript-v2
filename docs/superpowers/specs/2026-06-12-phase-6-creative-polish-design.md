@@ -1,6 +1,6 @@
 # Phase 6 — Creative polish (captions, kinetic text, music + remux) — Design
 
-**Status:** proposed 2026-06-12
+**Status:** COMPLETE & verified end-to-end 2026-06-15 (proposed 2026-06-12)
 **Build plan phase:** Phase 6 ("videos look produced")
 **Milestone:** a video ships with **captions**, **kinetic emphasis**, and a **music
 bed**, and **music changes re-mux in seconds without re-rendering**.
