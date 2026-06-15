@@ -2,6 +2,9 @@ import 'server-only';
 import { lintPrimitive, formatLintFeedback } from './lint';
 import { generateSampleProps } from './sample-props';
 import { bundleGateSite, renderGateStill } from './bundle';
+import { STRESS_THEMES, stressProps } from './stress-kit';
+import { anthropic, COMPOSITION_MODEL } from '../ai/anthropic';
+import { buildBrandQaPrompt, parseGate2Verdict } from '../ai/vision';
 import type { PropSchema, Theme } from './contract';
 
 // Authoring gate orchestration (Phase 7, spec 9.6). Lint (static, the security boundary)
@@ -54,8 +57,8 @@ export async function runGates(input: { code: string; propSchema: PropSchema; th
     return { passed: false, gates };
   }
 
-  // 3. Smoke — render sample props on Lambda; not-blank check. The frame is returned
-  // either way (pass = preview, fail = the failing frame).
+  // 3. Smoke — render default sample props on Lambda; not-blank check. The frame is
+  // returned either way (pass = preview, fail = the failing frame).
   try {
     const still = await renderGateStill(site.serveUrl);
     if (still.blank) {
@@ -63,8 +66,56 @@ export async function runGates(input: { code: string; propSchema: PropSchema; th
       return { passed: false, gates, frameUrl: still.frameUrl };
     }
     gates.push({ gate: 'smoke', passed: true });
-    return { passed: true, gates, frameUrl: still.frameUrl };
+
+    // 4. Brand integration — render the SAME bundle against the extreme stress kit with
+    // overflowing text + vision-check each for overflow/clipping/clash (spec 9.6).
+    const brand = await runBrandGate(site.serveUrl, input.propSchema);
+    gates.push(brand.result);
+    return { passed: brand.result.passed, gates, frameUrl: brand.frameUrl ?? still.frameUrl };
   } finally {
     await site.cleanup();
   }
+}
+
+// Render the candidate against each stress theme (same bundle, override inputProps) and
+// vision-QA the frame. First failure short-circuits with its frame + reason.
+async function runBrandGate(serveUrl: string, schema: PropSchema): Promise<{ result: GateResult; frameUrl?: string }> {
+  const props = stressProps(schema);
+  for (const { name, theme } of STRESS_THEMES) {
+    const still = await renderGateStill(serveUrl, { props, theme });
+    if (still.blank) {
+      return { result: { gate: 'brand', passed: false, reason: `Blank under the "${name}" stress kit.` }, frameUrl: still.frameUrl };
+    }
+    const verdict = await visionQa(still.frameUrl, buildBrandQaPrompt(name));
+    if (verdict && !verdict.pass) {
+      return {
+        result: { gate: 'brand', passed: false, reason: `Failed the "${name}" stress kit: ${verdict.issues.join('; ') || 'overflow/clipping'}` },
+        frameUrl: still.frameUrl,
+      };
+    }
+  }
+  return { result: { gate: 'brand', passed: true } };
+}
+
+// One Claude-vision QA pass on a rendered frame (download → base64 → vision). An
+// unparseable verdict passes by default (don't fail an authoring run on a parser hiccup).
+async function visionQa(frameUrl: string, prompt: string): Promise<{ pass: boolean; issues: string[] } | null> {
+  const res = await fetch(frameUrl);
+  if (!res.ok) return null;
+  const b64 = Buffer.from(await res.arrayBuffer()).toString('base64');
+  const msg = await anthropic().messages.create({
+    model: COMPOSITION_MODEL,
+    max_tokens: 1024,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: b64 } },
+          { type: 'text', text: prompt },
+        ],
+      },
+    ],
+  });
+  const text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+  return parseGate2Verdict(text);
 }

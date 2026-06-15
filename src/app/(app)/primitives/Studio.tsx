@@ -4,6 +4,14 @@ import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { draftPrimitive, runPrimitiveGates, savePrimitive, getDeployState, type GatesResult } from './actions';
 import type { PropSchema } from '@/lib/primitives/contract';
+import type { GateResult } from '@/lib/primitives/gates';
+
+// Bounded auto-fix budget (spec 9.6.1): unattended retries, reset by a new instruction.
+const MAX_AUTOFIX = 3;
+
+function gateFeedback(gates: GateResult[]): string {
+  return gates.filter((g) => !g.passed).map((g) => `[${g.gate}] ${g.reason ?? 'failed'}`).join('\n');
+}
 
 // The three-pane authoring studio (Phase 7, spec 9.4): Draft-with-AI · code+schema editor ·
 // preview + live gates. Save stays disabled until all gates pass. Lightweight (textarea)
@@ -28,7 +36,7 @@ export function Studio({ initial }: { initial: StudioPrimitive }) {
   const [schemaText, setSchemaText] = useState(JSON.stringify(initial.propSchema, null, 2));
   const [instruction, setInstruction] = useState('');
   const [log, setLog] = useState<string[]>([]);
-  const [busy, setBusy] = useState<null | 'draft' | 'gates' | 'save'>(null);
+  const [busy, setBusy] = useState<null | 'draft' | 'gates' | 'autofix' | 'save'>(null);
   const [gates, setGates] = useState<GatesResult | null>(null);
   const [deploy, setDeploy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,22 +67,63 @@ export function Studio({ initial }: { initial: StudioPrimitive }) {
     setBusy(null);
   }, [instruction, code, parseSchema]);
 
+  // Run the gates; on failure, the bounded auto-fix loop (spec 9.6.1) feeds the failure
+  // reasons + the failing frame back to the AI and re-runs, up to MAX_AUTOFIX times.
   const onRunGates = useCallback(async () => {
     setError(null);
-    let propSchema: PropSchema;
+    let curSchema: PropSchema;
     try {
-      propSchema = parseSchema();
+      curSchema = parseSchema();
     } catch {
       setError('Prop schema is not valid JSON.');
       return;
     }
+    let curCode = code;
     setBusy('gates');
     setGates(null);
+    let result: GatesResult;
     try {
-      setGates(await runPrimitiveGates({ code, propSchema }));
+      result = await runPrimitiveGates({ code: curCode, propSchema: curSchema });
     } catch (e) {
       setError(`Gates failed to run: ${(e as Error).message}`);
+      setBusy(null);
+      return;
     }
+    setGates(result);
+
+    let attempt = 0;
+    while (!result.passed && attempt < MAX_AUTOFIX) {
+      attempt++;
+      setLog((l) => [...l, `Auto-fix ${attempt}/${MAX_AUTOFIX}…`]);
+      setBusy('autofix');
+      const d = await draftPrimitive({
+        instruction: "Fix the failing gates while preserving the primitive's intent.",
+        currentCode: curCode,
+        currentSchema: curSchema,
+        feedback: gateFeedback(result.gates),
+        failingFrameDataUrl: result.frameDataUrl,
+      });
+      if ('error' in d) {
+        setError(d.error);
+        break;
+      }
+      curCode = d.code;
+      curSchema = d.proposedSchema;
+      setCode(curCode);
+      setSchemaText(JSON.stringify(curSchema, null, 2));
+      setName(d.meta.name);
+      setDescription(d.meta.description);
+      setBusy('gates');
+      try {
+        result = await runPrimitiveGates({ code: curCode, propSchema: curSchema });
+      } catch (e) {
+        setError(`Gates failed to run: ${(e as Error).message}`);
+        break;
+      }
+      setGates(result);
+    }
+    if (result.passed && attempt > 0) setLog((l) => [...l, `Auto-fix succeeded after ${attempt} attempt(s).`]);
+    else if (!result.passed && attempt >= MAX_AUTOFIX) setLog((l) => [...l, 'Auto-fix exhausted — over to you (a new instruction resets it).']);
     setBusy(null);
   }, [code, parseSchema]);
 
@@ -167,15 +216,15 @@ export function Studio({ initial }: { initial: StudioPrimitive }) {
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Preview & gates</h2>
           <button type="button" disabled={busy !== null || !code.trim()} onClick={onRunGates} className={BTN}>
-            {busy === 'gates' ? 'Running…' : 'Run gates'}
+            {busy === 'gates' ? 'Running…' : busy === 'autofix' ? 'Auto-fixing…' : 'Run gates'}
           </button>
         </div>
         {gates?.frameDataUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={gates.frameDataUrl} alt="smoke frame" className="mb-2 w-full rounded-md border border-black/10 dark:border-white/10" />
+          <img src={gates.frameDataUrl} alt="gate frame" className="mb-2 w-full rounded-md border border-black/10 dark:border-white/10" />
         )}
         <ul className="space-y-1 text-xs">
-          {(gates?.gates ?? [{ gate: 'lint' }, { gate: 'compile' }, { gate: 'smoke' }]).map((g) => (
+          {(gates?.gates ?? [{ gate: 'lint' }, { gate: 'compile' }, { gate: 'smoke' }, { gate: 'brand' }]).map((g) => (
             <li key={g.gate} className="flex items-start gap-2">
               <span>{'passed' in g ? (g.passed ? '✓' : '✗') : '·'}</span>
               <span className={'passed' in g && !g.passed ? 'text-red-600' : ''}>

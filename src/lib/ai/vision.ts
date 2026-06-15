@@ -54,6 +54,28 @@ export function buildGate2QaPrompt(sceneIntent: string): string {
   ].join('\n');
 }
 
+// Brand-integration QA (Phase 7, spec 9.6) — shown a primitive rendered against an
+// extreme stress-kit brand with overflowing text. Judges ONLY layout robustness, not the
+// (deliberately extreme) palette itself. Reuses parseGate2Verdict for the verdict shape.
+export function buildBrandQaPrompt(stressName: string): string {
+  return [
+    'You QA a single reusable video PRIMITIVE rendered against an intentionally EXTREME',
+    `brand kit ("${stressName}") with very long, overflowing sample text. Judge ONLY whether`,
+    'the primitive ADAPTS — not the palette itself (the extreme colours are intended).',
+    '',
+    'Fail the frame if any of these are true:',
+    '- Text or shapes overflow or are clipped by the frame edges.',
+    '- Text is cut off, truncated mid-glyph, or visibly collides/overlaps illegibly.',
+    '- The primitive rendered nothing, or is obviously broken.',
+    'A primitive that wraps/shrinks long text and stays inside the frame PASSES, even if it',
+    'looks busy. Extreme but readable contrast is NOT a failure.',
+    '',
+    'Output ONLY a JSON object, no prose, no markdown fences:',
+    '{"pass": true|false, "issues": ["short reason", ...]}',
+    '(leave issues empty when pass is true)',
+  ].join('\n');
+}
+
 // Parse the vision verdict, tolerating accidental ```json fences. Returns null on
 // malformed JSON or a missing boolean `pass`.
 export function parseGate2Verdict(text: string): Gate2Verdict | null {

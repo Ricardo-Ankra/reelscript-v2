@@ -61,15 +61,20 @@ export async function bundleGateSite(
 }
 
 // Render the harness mid-frame on Lambda; mechanical not-blank check (reuses the Gate-2
-// byte-floor heuristic). Returns the frame for the studio to show on failure.
-export async function renderGateStill(serveUrl: string): Promise<{ blank: boolean; frameUrl: string; costUsd: number }> {
+// byte-floor heuristic). With no override it renders the baked default props/theme
+// (smoke); an override drives the brand stress kit (same bundle, just different
+// inputProps), so the brand gate costs N renders, not N bundles.
+export async function renderGateStill(
+  serveUrl: string,
+  override?: { props?: Record<string, unknown>; theme?: Theme },
+): Promise<{ blank: boolean; frameUrl: string; costUsd: number }> {
   const region = serverEnv.aws.region as AwsRegion;
   const still = await renderStillOnLambda({
     region,
     functionName: serverEnv.remotion.functionName,
     serveUrl,
     composition: 'Gate',
-    inputProps: {},
+    inputProps: override ?? {},
     imageFormat: 'png',
     privacy: 'private',
     frame: 15,
@@ -132,26 +137,39 @@ export async function deployLiveSite(primitives: { name: string; code: string }[
   }
 }
 
-// The harness entry. Bakes sample props + the brand snapshot into a 'Gate' composition
-// rendering the candidate once. JSON.stringify is safe — props/theme are plain data.
+// The harness entry. The default props/theme are baked in (so smoke renders without an
+// override), but the 'Gate' composition reads props+theme from inputProps, so the brand
+// gate can re-render the SAME bundle with stress-kit variants. JSON.stringify is safe —
+// props/theme are plain data.
 function harnessEntry(sampleProps: Record<string, unknown>, theme: Theme): string {
   return `import { registerRoot, Composition, AbsoluteFill } from 'remotion';
 import { ThemeContext } from '../../src/lib/primitives/theme-context';
 import Candidate from './Candidate';
 
-const SAMPLE_PROPS = ${JSON.stringify(sampleProps)};
-const THEME = ${JSON.stringify(theme)};
+const DEFAULT_PROPS = ${JSON.stringify(sampleProps)};
+const DEFAULT_THEME = ${JSON.stringify(theme)};
 
-const Harness = () => (
-  <ThemeContext.Provider value={THEME}>
-    <AbsoluteFill style={{ backgroundColor: THEME.colors.background }}>
-      <Candidate {...SAMPLE_PROPS} />
-    </AbsoluteFill>
-  </ThemeContext.Provider>
-);
+const Harness = ({ props, theme }) => {
+  const t = theme || DEFAULT_THEME;
+  return (
+    <ThemeContext.Provider value={t}>
+      <AbsoluteFill style={{ backgroundColor: t.colors.background }}>
+        <Candidate {...(props || DEFAULT_PROPS)} />
+      </AbsoluteFill>
+    </ThemeContext.Provider>
+  );
+};
 
 registerRoot(() => (
-  <Composition id="Gate" component={Harness} durationInFrames={30} fps={30} width={1080} height={1920} />
+  <Composition
+    id="Gate"
+    component={Harness}
+    durationInFrames={30}
+    fps={30}
+    width={1080}
+    height={1920}
+    defaultProps={{ props: DEFAULT_PROPS, theme: DEFAULT_THEME }}
+  />
 ));
 `;
 }

@@ -34,12 +34,22 @@ export async function draftPrimitive(input: {
   currentCode?: string;
   currentSchema?: PropSchema;
   feedback?: string;
+  failingFrameDataUrl?: string; // the failing gate frame, fed back to the AI (vision)
 }): Promise<DraftPrimitiveResult | { error: string }> {
+  const userText = buildDraftUserPrompt(input);
+  // When a failing frame is provided (bounded auto-fix, spec 9.6.1), show it to the AI.
+  const frame = input.failingFrameDataUrl ? parseDataUrl(input.failingFrameDataUrl) : null;
+  const content = frame
+    ? [
+        { type: 'image' as const, source: { type: 'base64' as const, media_type: frame.mediaType as 'image/png', data: frame.data } },
+        { type: 'text' as const, text: userText },
+      ]
+    : userText;
   const msg = await anthropic().messages.create({
     model: PRIMITIVE_DRAFT_MODEL,
     max_tokens: 16000,
     system: buildDraftSystemPrompt(),
-    messages: [{ role: 'user', content: buildDraftUserPrompt(input) }],
+    messages: [{ role: 'user', content }],
   });
   const text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
   const draft = parseDraft(text);
@@ -142,6 +152,12 @@ export async function setPrimitiveStatus(input: {
     .update({ status: input.action === 'archive' ? 'archived' : 'active' })
     .eq('id', input.primitiveId);
   return error ? { error: error.message } : { ok: true };
+}
+
+// "data:image/png;base64,XXXX" → { mediaType, data } for a vision content block.
+function parseDataUrl(dataUrl: string): { mediaType: string; data: string } | null {
+  const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  return m ? { mediaType: m[1], data: m[2] } : null;
 }
 
 // Polled by the studio after Save to show the re-bundle finishing.
