@@ -44,6 +44,7 @@ import {
 import { selectMusicTrack, type MusicTrack } from '@/lib/music/select';
 import { canonicalizeMusicParams, type MusicParams } from '@/lib/music/params';
 import type { TtsAlignment } from '@/lib/voice/alignment';
+import { loadComposeRegistry } from '@/lib/primitives/registry-load';
 
 // =============================================================================
 // Phase 4 — the render pipeline (spec 13.1). One function: compose → gate1 →
@@ -175,6 +176,20 @@ export const renderVideo = inngest.createFunction(
       const key = `specs/${renderId}.json`;
       await putObject(key, JSON.stringify(durableSpec), 'application/json');
       await admin.from('renders').update({ composition_spec_r2_key: key }).eq('id', renderId);
+    });
+
+    // Record authored-primitive usage (Phase 7, spec 9.8) — drives usage_count + the
+    // "delete only at zero usage" rule. Only DB primitives the spec actually references.
+    await step.run('record-primitive-usage', async () => {
+      const names = new Set(durableSpec.scenes.flatMap((s) => s.instances.map((i) => i.primitive)));
+      const { data: video } = await admin.from('videos').select('account_id').eq('id', videoId).single();
+      const accountId = video?.account_id as string | undefined;
+      if (!accountId) return;
+      const { data: prims } = await admin.from('primitives').select('id, name').eq('account_id', accountId).eq('status', 'active');
+      const rows = (prims ?? [])
+        .filter((p) => names.has(p.name as string))
+        .map((p) => ({ account_id: accountId, primitive_id: p.id as string, video_id: videoId }));
+      if (rows.length) await admin.from('primitive_usages').upsert(rows, { onConflict: 'primitive_id,video_id', ignoreDuplicates: true });
     });
 
     // Persist the music choice + mix params on the render (the re-mux + the Music
@@ -493,12 +508,17 @@ async function loadBrief(
     musicTrackId = selectMusicTrack(mood, tracks)?.id ?? null;
   }
 
+  // Phase 7: the AI may compose with the starter set ∪ this account's active+deployed
+  // authored primitives. Gate 1 validates against the same registry.
+  const registry = await loadComposeRegistry(admin, accountId);
+
   return {
     metadata: { width, height, fps, durationInFrames },
     theme,
     assets,
     scenes: briefScenes,
     kinetic,
+    registry,
     accountId,
     needsStock,
     resourceIds: [...resourceIdSet],
@@ -583,7 +603,7 @@ type ComposeOutcome = {
 // Gate 1, with budget-2 validate-and-retry. brief already carries every resolved
 // asset (audio + any pre-resolved resources).
 async function proceduralCompose(brief: CompositionBrief): Promise<ComposeOutcome> {
-  const system = buildCompositionSystemPrompt(); // stockEnabled defaults false
+  const system = buildCompositionSystemPrompt(brief.registry, { kinetic: brief.kinetic }); // stock off; registry + kinetic threaded
   const messages: { role: 'user' | 'assistant'; content: string }[] = [
     { role: 'user', content: buildCompositionUserPrompt(brief) },
   ];
@@ -613,7 +633,7 @@ async function proceduralCompose(brief: CompositionBrief): Promise<ComposeOutcom
     const ai = parseComposition(text);
     if (ai) {
       const spec = assembleSpec(ai, brief);
-      const result = validateSpec(spec, brief.theme);
+      const result = validateSpec(spec, brief.theme, brief.registry);
       if (result.ok) return { ok: true, spec, tokensIn, tokensOut, searches: 0 };
       errors = result.errors;
     } else {
@@ -683,11 +703,11 @@ async function agenticCompose(
     }
 
     // Resolve only the stock assets the AI actually referenced, then validate.
-    const plan = planStockResolution(collectReferencedAssetIds(result.ai), result.registry);
+    const plan = planStockResolution(collectReferencedAssetIds(result.ai, brief.registry), result.registry);
     const stockEntries = await resolveStockAssets(admin, accountId, plan);
     const fullBrief: CompositionBrief = { ...brief, assets: [...brief.assets, ...stockEntries] };
     const spec = assembleSpec(result.ai, fullBrief);
-    const v = validateSpec(spec, brief.theme);
+    const v = validateSpec(spec, brief.theme, brief.registry);
     if (v.ok) return { ok: true, spec, tokensIn, tokensOut, searches };
     errors = v.errors;
     feedback = `Your composition failed validation:\n${formatGate1Feedback(errors)}\nReturn ONLY the corrected JSON.`;

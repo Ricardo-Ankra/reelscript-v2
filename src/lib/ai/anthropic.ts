@@ -20,3 +20,7 @@ export const SCRIPT_MODEL = 'claude-opus-4-8';
 // budget_tokens — use thinking: {type: 'adaptive'} (no fixed budget). Reliability
 // of the emitted JSON comes from the firm prompt + Gate 1's validate-and-retry.
 export const COMPOSITION_MODEL = 'claude-sonnet-4-6';
+
+// Primitive drafting = Opus with the primitive skill loaded (spec 3.4 / 9.5). Pinned
+// until model_routing (Phase 8). Code generation wants the strongest model.
+export const PRIMITIVE_DRAFT_MODEL = 'claude-opus-4-8';

@@ -43,6 +43,9 @@ export interface CompositionBrief {
   assets: AssetManifestEntry[];
   scenes: SceneBrief[];
   kinetic?: KineticConfig; // omitted ⇒ kinetic text disabled
+  // The primitive registry the AI may compose with (Phase 7): starter set ∪ the
+  // account's active+deployed authored primitives. Omitted ⇒ STARTER_REGISTRY.
+  registry?: StarterRegistry;
 }
 
 // What the AI returns: per-scene instance lists, nothing else.
@@ -303,7 +306,8 @@ export async function runAgenticComposition(
   brief: CompositionBrief,
   deps: AgenticDeps,
 ): Promise<AgenticResult> {
-  const system = buildCompositionSystemPrompt(STARTER_REGISTRY, { stockEnabled: true, kinetic: brief.kinetic });
+  const composeRegistry = brief.registry ?? STARTER_REGISTRY;
+  const system = buildCompositionSystemPrompt(composeRegistry, { stockEnabled: true, kinetic: brief.kinetic });
   const userPrompt = deps.feedback
     ? `${buildCompositionUserPrompt(brief)}\n\n${deps.feedback}`
     : buildCompositionUserPrompt(brief);
