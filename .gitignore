@@ -43,3 +43,7 @@ next-env.d.ts
 
 # Visual brainstorming companion (superpowers)
 .superpowers/
+
+# Phase 7: dynamic primitive bundling workspace
+.primitive-cache/
+remotion/primitives/db/

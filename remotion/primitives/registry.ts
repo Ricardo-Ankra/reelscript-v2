@@ -5,10 +5,12 @@ import { FullBleed } from './FullBleed';
 import { Image } from './Image';
 import { Video } from './Video';
 import { KineticText } from './KineticText';
+import { DB_PRIMITIVES } from './db-primitives.generated';
 
 // The starter primitive set (spec 9.9). The composition maps a spec's
 // primitive-instance name to its component through this registry. Phase 5 adds the
-// media primitives (Image/Video); Phase 6 adds KineticText (animated emphasis).
+// media primitives (Image/Video); Phase 6 adds KineticText (animated emphasis); Phase 7
+// merges in account-authored primitives baked into the bundle by the deploy job (9.7).
 export type PrimitiveComponent = ComponentType<Record<string, unknown>>;
 
 export const PRIMITIVES: Record<string, PrimitiveComponent> = {
@@ -18,4 +20,5 @@ export const PRIMITIVES: Record<string, PrimitiveComponent> = {
   Image: Image as unknown as PrimitiveComponent,
   Video: Video as unknown as PrimitiveComponent,
   KineticText: KineticText as unknown as PrimitiveComponent,
+  ...DB_PRIMITIVES,
 };

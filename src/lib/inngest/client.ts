@@ -47,4 +47,15 @@ export type VoiceSynthesizeData = {
   voice: { voiceId: string; modelId?: string; settings?: VoiceSettings };
 };
 
+// primitive/deploy re-bundles the Remotion site so a newly-saved (or edited) primitive
+// reaches Lambda (Phase 7, spec 9.7). It re-bundles ALL the account's active primitives,
+// so the payload only needs the account + the triggering primitive/version (for the job
+// record + marking deployed_version on success).
+export type PrimitiveDeployData = {
+  jobId: string;
+  accountId: string;
+  primitiveId: string;
+  version: number;
+};
+
 export const inngest = new Inngest({ id: 'reelscript' });

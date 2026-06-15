@@ -21,7 +21,9 @@
     "seed:music": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/seed-music.ts",
     "drive:render": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/drive-render.ts",
     "drive:remux": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/drive-remux.ts",
-    "inspect:render": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/inspect-render.ts"
+    "inspect:render": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/inspect-render.ts",
+    "smoke:primitive": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/primitive-bundle-smoke.ts",
+    "drive:primitive": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/drive-primitive.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",

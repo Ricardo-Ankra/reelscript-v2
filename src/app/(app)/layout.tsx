@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { signout } from '../(auth)/actions';
@@ -22,7 +23,14 @@ export default async function AppLayout({
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <header className="flex items-center justify-between border-b border-black/10 px-6 py-3 dark:border-white/10">
-        <span className="font-semibold">Reelscript</span>
+        <nav className="flex items-center gap-4">
+          <Link href="/dashboard" className="font-semibold">
+            Reelscript
+          </Link>
+          <Link href="/primitives" className="text-sm opacity-70 hover:opacity-100">
+            Primitives
+          </Link>
+        </nav>
         <div className="flex items-center gap-4 text-sm">
           <span className="opacity-70">{user.email}</span>
           <form action={signout}>
