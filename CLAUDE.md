@@ -59,17 +59,29 @@ authoritative and the `docs/` copy remains the design record.
 ## Working agreement
 
 - **Build strictly in the build-plan phase order. Do not jump ahead.**
-- **Current phase: Phase 7 — The primitive authoring studio.** (Phase 0 —
+- **Current phase: Phase 8 — Full surfaces.** (Phase 0 —
   Foundations: complete & verified 2026-06-04. Phase 1 — Render spine: complete &
   verified 2026-06-08. Phase 2 — Script and scenes: complete & verified 2026-06-08.
   Phase 3 — Voice synthesis: complete & verified 2026-06-09. Phase 4 — Composition,
   the slice closes: complete & verified 2026-06-09. Phase 5 — Asset richness:
-  complete & verified 2026-06-10. **Phase 6 — Captions, kinetic text, music + remux:
-  complete & verified 2026-06-15** — system-built captions (burnt-in + SRT/VTT
-  sidecars) with kinetic-span suppression; AI-authored KineticText (closed bounce|pop
-  enum, caption-band-excluded zones, legibility bake); opt-in music mood-selected from
-  an ElevenLabs-seeded library and mixed by a dedicated ffmpeg Lambda — music changes
-  re-mux in ~7s with no re-render. Design docs under `docs/superpowers/specs/2026-06-0*`.)
+  complete & verified 2026-06-10. Phase 6 — Captions, kinetic text, music + remux:
+  complete & verified 2026-06-15. **Phase 7 — The primitive authoring studio:
+  complete & verified 2026-06-15** — the library is extensible from the UI: describe a
+  primitive → Opus drafts it with the primitive skill → the four authoring gates
+  (lint static / compile / smoke / brand stress kit) validate it once → save re-bundles
+  the Remotion site → the composition AI places it. Bounded auto-fix loop, prop-schema
+  lifecycle + evolution guard, archive/restore/delete with usage gating. Backend proven
+  end-to-end headlessly (`npm run drive:primitive`); the three-pane studio UI ships.
+  Design docs under `docs/superpowers/specs/2026-06-0*`.)
+  - **Phase 7 deferrals carried forward:** the **dynamic bundle** writes into the repo
+    tree (`.primitive-cache/`, `remotion/primitives/db/`) — fine in dev, but **production
+    bundling needs a writable workspace** (a build Lambda or a /tmp self-contained
+    bundle); flagged in `bundle.ts`. Re-bundle **overwrites the single site** (`reelscript`)
+    — **in-flight render pinning is deferred** (renders are quick + single-operator).
+    The **compile gate = esbuild bundle-success** (not a full `tsc` type-check). The
+    **code editor is a textarea** (no Monaco). Primitive drafting is pinned to **Opus**
+    (`model_routing` is Phase 8). The **studio UI's browser interaction pass** (watching
+    auto-fix retry live) is the operator's manual review; the backend it drives is proven.
   - **Phase 6 deferrals carried forward:** **aspect-ratio / FPS / target-length
     controls** and **thumbnail generation** are Phase 8 (the milestone was scoped to
     the three creative features; aspect/FPS are already honored at render time, just

@@ -1,6 +1,7 @@
 # Phase 7 — Primitive authoring studio — Design
 
-**Status:** proposed 2026-06-15
+**Status:** COMPLETE & verified (backend e2e) 2026-06-15 — incl. step 2 (brand gate +
+auto-fix); studio UI browser review is the operator's pending pass (proposed 2026-06-15)
 **Build plan phase:** Phase 7 ("the library becomes extensible from the frontend")
 **Milestone:** **author a new primitive by describing it, watch it pass the gates, and
 have the composition AI use it in the next video.**
