@@ -4,6 +4,7 @@ import { loadFont } from '@remotion/google-fonts/Poppins';
 import { ThemeContext, AssetContext, type ResolvedAsset } from '../src/lib/primitives/theme-context';
 import type { CompositionSpec } from '../src/lib/composition/spec';
 import { PRIMITIVES } from './primitives/registry';
+import { CaptionTrack } from './CaptionTrack';
 
 // Register the brand font before the first frame is drawn (spec 10.4). Remotion's
 // google-fonts integration gates rendering on this internally.
@@ -94,6 +95,12 @@ export const ReelComposition: FC<ReelProps> = ({ spec }) => {
             </Sequence>
           );
         })}
+
+        {/* Burnt-in captions (spec 4.2.1 / 8.5): a system layer over all scenes, in
+            the reserved lower-third band. Already suppressed during kinetic spans. */}
+        {spec.captions && spec.captions.length > 0 && (
+          <CaptionTrack segments={spec.captions} style={spec.captionStyle} />
+        )}
 
         {/* Attribution overlay over the final ~90 frames (spec 8.6). */}
         {attributions.length > 0 && (

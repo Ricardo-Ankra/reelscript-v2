@@ -14,6 +14,7 @@
 // Relative import (not the @/ alias) so the Remotion bundler, which compiles the
 // remotion/ entry, can resolve this module without extra webpack alias config.
 import type { Theme, PrimitiveInstance } from '../primitives/contract';
+import type { CaptionSegment, CaptionStyle } from '../captions/segments';
 
 export interface CompositionMetadata {
   width: number;
@@ -47,4 +48,14 @@ export interface CompositionSpec {
   /** Every fetchable asset; the renderer resolves scene refs through this. */
   assets: AssetManifestEntry[];
   scenes: CompositionScene[];
+  /**
+   * Burnt-in caption track (Phase 6, spec 4.2.1 / 8.5). SYSTEM-built from the word
+   * timings, NOT authored by the composition AI — and already suppressed during
+   * kinetic spans (the burnt track only; SRT/VTT sidecars keep the full narration).
+   * Absent/empty = captions off for this render. Music is deliberately NOT in the
+   * spec: the Remotion render is voiceover-only; the ffmpeg re-mux owns music (10.1).
+   */
+  captions?: CaptionSegment[];
+  /** Baked caption style (position/size/legibility) from brand_kit.caption_style. */
+  captionStyle?: CaptionStyle;
 }

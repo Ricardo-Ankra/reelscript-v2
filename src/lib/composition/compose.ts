@@ -24,6 +24,17 @@ export interface SceneBrief {
   shotHints: string[]; // the shots' descriptions/intents from the script
   durationInFrames: number; // system-fixed, from the synthesized audio
   voiceoverAssetId?: string; // manifest id for this scene's audio
+  // Spoken words with their SCENE-RELATIVE frame windows (Phase 6), so the AI can
+  // frame-align KineticText emphasis to an actual word. Present only when kinetic is
+  // enabled; derived from the persisted word_alignments.
+  words?: { t: string; s: number; e: number }[];
+}
+
+// Kinetic-text config for this video (spec 4.2.2), distilled to what the prompt
+// needs. usage drives how freely the AI reaches for KineticText.
+export interface KineticConfig {
+  enabled: boolean;
+  usage: 'sparing' | 'liberal';
 }
 
 export interface CompositionBrief {
@@ -31,6 +42,7 @@ export interface CompositionBrief {
   theme: Theme;
   assets: AssetManifestEntry[];
   scenes: SceneBrief[];
+  kinetic?: KineticConfig; // omitted ⇒ kinetic text disabled
 }
 
 // What the AI returns: per-scene instance lists, nothing else.
@@ -86,7 +98,7 @@ export function buildStockToolResult(candidates: StockCandidate[], max = 6): Con
 
 export function buildCompositionSystemPrompt(
   registry: StarterRegistry = STARTER_REGISTRY,
-  opts: { stockEnabled?: boolean } = {},
+  opts: { stockEnabled?: boolean; kinetic?: KineticConfig } = {},
 ): string {
   const primitives = Object.entries(registry)
     .map(([name, prim]) => {
@@ -106,6 +118,22 @@ export function buildCompositionSystemPrompt(
   const backgroundRule = opts.stockEnabled
     ? '- Backgrounds: prefer REAL footage — search_stock for a fitting photo/video and place it as an Image or Video at layer 0 (fit "cover"). Use a solid FullBleed only when no candidate fits or for a deliberately graphic scene.'
     : '- Every scene needs a background — start each scene with a FullBleed (layer 0). Compose from these graphic/typographic primitives only (no stock footage available).';
+
+  // Kinetic text (spec 8.4). When enabled, guide frame-aligned emphasis; when not,
+  // forbid the primitive outright (it's in the list, so silence isn't enough).
+  const kineticSection = opts.kinetic?.enabled
+    ? [
+        '',
+        'Kinetic text (animated emphasis):',
+        `- Use KineticText ${opts.kinetic.usage === 'liberal' ? 'freely but purposefully' : 'SPARINGLY — only at the strongest emphasis beats'}.`,
+        '- It is NOT a caption or a transcript: pick 1–4 words that are actually spoken,',
+        '  and FRAME-ALIGN it — set startFrame/durationInFrames to that word\'s window from',
+        '  the "spoken words" timings given for the scene.',
+        '- Choose animation "bounce" or "pop" (the ONLY two) and position "upper" or',
+        '  "center". The lower third is reserved for captions — never place it there.',
+        '- Layer it ABOVE the background (and above any Text) so it reads.',
+      ]
+    : ['', '- Do NOT use the KineticText primitive in this video.'];
 
   const stockSection = opts.stockEnabled
     ? [
@@ -136,6 +164,7 @@ export function buildCompositionSystemPrompt(
     '- Each instance has `startFrame` (≥0, relative to the scene) and `durationInFrames`',
     '  (>0). startFrame + durationInFrames must NOT exceed the scene duration.',
     '- Keep on-screen text short enough to read; the narration is spoken, not shown verbatim.',
+    ...kineticSection,
     ...stockSection,
     '',
     'Final answer: output ONLY a single JSON object, no prose, no markdown fences:',
@@ -149,15 +178,22 @@ export function buildCompositionSystemPrompt(
 export function buildCompositionUserPrompt(brief: CompositionBrief): string {
   const theme = brief.theme;
   const colorTokens = Object.keys(theme.colors).join(', ');
+  const kineticOn = brief.kinetic?.enabled;
   const scenes = brief.scenes
     .map((s) => {
       const hints = s.shotHints.length ? s.shotHints.map((h) => `    - ${h}`).join('\n') : '    (none)';
-      return [
+      const lines = [
         `Scene ${s.position} (sceneId "${s.id}", durationInFrames ${s.durationInFrames}):`,
         `  narration: ${JSON.stringify(s.narration)}`,
         `  shot intents:`,
         hints,
-      ].join('\n');
+      ];
+      // Spoken-word frame windows for kinetic alignment (scene-relative frames).
+      if (kineticOn && s.words && s.words.length) {
+        const wl = s.words.map((w) => `${w.t}@${w.s}-${w.e}`).join(' ');
+        lines.push(`  spoken words (frame windows for KineticText alignment): ${wl}`);
+      }
+      return lines.join('\n');
     })
     .join('\n\n');
 
@@ -267,7 +303,7 @@ export async function runAgenticComposition(
   brief: CompositionBrief,
   deps: AgenticDeps,
 ): Promise<AgenticResult> {
-  const system = buildCompositionSystemPrompt(STARTER_REGISTRY, { stockEnabled: true });
+  const system = buildCompositionSystemPrompt(STARTER_REGISTRY, { stockEnabled: true, kinetic: brief.kinetic });
   const userPrompt = deps.feedback
     ? `${buildCompositionUserPrompt(brief)}\n\n${deps.feedback}`
     : buildCompositionUserPrompt(brief);
@@ -392,4 +428,22 @@ export function assembleSpec(ai: AiComposition, brief: CompositionBrief): Compos
       instances: instancesByScene.get(s.id) ?? [],
     })),
   };
+}
+
+// Absolute frame windows of every KineticText instance in an assembled spec. Feeds
+// caption suppression (§collision prevention): a caption overlapping one of these is
+// dropped from the BURNT track so the kinetic word and its caption echo never co-show.
+export function collectKineticSpans(spec: CompositionSpec): { fromFrame: number; toFrame: number }[] {
+  const spans: { fromFrame: number; toFrame: number }[] = [];
+  let offset = 0;
+  for (const scene of spec.scenes) {
+    for (const inst of scene.instances) {
+      if (inst.primitive === 'KineticText') {
+        const from = offset + Number(inst.startFrame);
+        spans.push({ fromFrame: from, toFrame: from + Number(inst.durationInFrames) });
+      }
+    }
+    offset += scene.durationInFrames;
+  }
+  return spans;
 }

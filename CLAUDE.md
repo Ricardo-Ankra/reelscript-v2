@@ -59,15 +59,31 @@ authoritative and the `docs/` copy remains the design record.
 ## Working agreement
 
 - **Build strictly in the build-plan phase order. Do not jump ahead.**
-- **Current phase: Phase 6 — Captions, kinetic text, music + remux.** (Phase 0 —
+- **Current phase: Phase 7 — The primitive authoring studio.** (Phase 0 —
   Foundations: complete & verified 2026-06-04. Phase 1 — Render spine: complete &
   verified 2026-06-08. Phase 2 — Script and scenes: complete & verified 2026-06-08.
   Phase 3 — Voice synthesis: complete & verified 2026-06-09. Phase 4 — Composition,
-  the slice closes: complete & verified 2026-06-09. **Phase 5 — Asset richness:
-  complete & verified 2026-06-10** — videos pull real, AI-chosen stock (Pexels +
-  Pixabay) via an agentic vision loop, with graceful degradation to procedural;
-  Gate 2 (smoke frame + vision QA) guards the render; attribution overlay ships.
-  Design docs under `docs/superpowers/specs/2026-06-0*`.)
+  the slice closes: complete & verified 2026-06-09. Phase 5 — Asset richness:
+  complete & verified 2026-06-10. **Phase 6 — Captions, kinetic text, music + remux:
+  complete & verified 2026-06-15** — system-built captions (burnt-in + SRT/VTT
+  sidecars) with kinetic-span suppression; AI-authored KineticText (closed bounce|pop
+  enum, caption-band-excluded zones, legibility bake); opt-in music mood-selected from
+  an ElevenLabs-seeded library and mixed by a dedicated ffmpeg Lambda — music changes
+  re-mux in ~7s with no re-render. Design docs under `docs/superpowers/specs/2026-06-0*`.)
+  - **Phase 6 deferrals carried forward:** **aspect-ratio / FPS / target-length
+    controls** and **thumbnail generation** are Phase 8 (the milestone was scoped to
+    the three creative features; aspect/FPS are already honored at render time, just
+    no UI). Music selection is a **deterministic mood-match in code** (not an AI
+    choice), and the **Music panel is minimal** (reroll + master volume) — the full
+    panel (ducking depth, loop, in/out crop, fade) is Phase 8, though the re-mux
+    already accepts those params. Seed beds are **generated via the ElevenLabs Music
+    API** (Pexels Audio discontinued); **reroll is reselection-only**, never
+    regeneration. The remux Lambda is **invoked via the SDK (SigV4)**, not a public
+    Function URL (the AWS account blocks public URLs); `remotion-user` carries a narrow
+    `lambda:InvokeFunction` inline policy for it. Per-video caption/kinetic/music
+    toggles come from **`video.settings` + channel defaults** (no settings UI until
+    Phase 8). **Kinetic duration is uncapped** — a long emphasis word suppresses
+    captions for its span; a duration cap is a deferred tuning option.
   - **Phase 3 deferrals carried forward:** ElevenLabs key is an **env var**
     (`ELEVENLABS_API_KEY`), not `api_credentials` (Phase 8); synthesis is
     **fallback-only** (no per-model `voice_profiles` rows/UI — Phase 8); the voice

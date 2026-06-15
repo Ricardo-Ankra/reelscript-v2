@@ -17,10 +17,15 @@
     "studio": "remotion studio remotion/index.ts",
     "deploy:remotion": "node --env-file=.env.local scripts/deploy-remotion.mjs",
     "setup:r2-cors": "node --env-file=.env.local scripts/set-r2-cors.mjs",
-    "smoke:assets": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/asset-smoke.ts"
+    "smoke:assets": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/asset-smoke.ts",
+    "seed:music": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/seed-music.ts",
+    "drive:render": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/drive-render.ts",
+    "drive:remux": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/drive-remux.ts",
+    "inspect:render": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/inspect-render.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",
+    "@aws-sdk/client-lambda": "^3.986.0",
     "@aws-sdk/client-s3": "^3.1062.0",
     "@aws-sdk/s3-request-presigner": "^3.1062.0",
     "@remotion/bundler": "4.0.472",

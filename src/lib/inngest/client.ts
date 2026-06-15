@@ -11,6 +11,18 @@ export type RenderStartData = { jobId: string; renderId: string; videoId: string
 // no AI. Kept as the only no-AI path to exercise the Lambda spine in isolation.
 export type RenderSampleData = { renderId: string; specKey: string };
 
+// music/remux drives the Phase-6 audio-only re-mux (spec 10.1): the dedicated ffmpeg
+// Lambda mixes the render's chosen track onto its voiceover-only base MP4, producing
+// the final output WITHOUT a re-render. Emitted by the render pipeline when music is
+// on, and by the Music panel on reroll/replace. jobId is set when a render job owns
+// the remux (pipeline path); the standalone reroll path runs without a job row.
+export type MusicRemuxData = {
+  renderId: string;
+  accountId: string;
+  videoId: string;
+  jobId?: string;
+};
+
 // script/generate carries everything the worker needs to generate without
 // re-reading rows: the job to update, the target video + account, the user
 // prompt, and the resolved config + brand (config sourced from video.settings).

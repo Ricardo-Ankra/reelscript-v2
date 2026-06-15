@@ -6,6 +6,7 @@ import { SceneCard, type Shot } from './SceneCard';
 import { estimateSynthesisCost } from '@/lib/voice/estimate';
 import { synthesizeScenes, getSceneAudioUrl } from './voice-actions';
 import { startVideoRender, getRenderState } from './render-actions';
+import { MusicPanel } from './MusicPanel';
 
 export type SceneWithShots = {
   id: string;
@@ -381,6 +382,9 @@ export function Editor({
               className="w-full rounded-md border border-black/10 dark:border-white/10"
             />
           )}
+          {/* Phase 6: reroll/replace music + master volume → audio-only re-mux. Self-
+              contained; renders nothing until a completed render + a seeded library. */}
+          <MusicPanel videoId={videoId} onUpdated={(url) => setRenderUrl(url)} />
         </div>
       )}
 
