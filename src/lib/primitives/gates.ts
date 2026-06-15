@@ -20,7 +20,9 @@ export interface GateResult {
 export interface GatesOutcome {
   passed: boolean;
   gates: GateResult[];
-  failingFrameUrl?: string;
+  // The smoke-gate still — present whenever smoke ran (pass OR fail). Doubles as the
+  // studio preview, so no in-browser compiler is needed.
+  frameUrl?: string;
 }
 
 // A neutral brand kit to render the gate against (the brand stress kit is step 2).
@@ -52,15 +54,16 @@ export async function runGates(input: { code: string; propSchema: PropSchema; th
     return { passed: false, gates };
   }
 
-  // 3. Smoke — render sample props on Lambda; not-blank check.
+  // 3. Smoke — render sample props on Lambda; not-blank check. The frame is returned
+  // either way (pass = preview, fail = the failing frame).
   try {
     const still = await renderGateStill(site.serveUrl);
     if (still.blank) {
       gates.push({ gate: 'smoke', passed: false, reason: 'Rendered frame is blank — the primitive drew nothing.' });
-      return { passed: false, gates, failingFrameUrl: still.frameUrl };
+      return { passed: false, gates, frameUrl: still.frameUrl };
     }
     gates.push({ gate: 'smoke', passed: true });
-    return { passed: true, gates };
+    return { passed: true, gates, frameUrl: still.frameUrl };
   } finally {
     await site.cleanup();
   }
