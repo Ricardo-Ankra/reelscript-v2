@@ -5,6 +5,7 @@ import { inngest } from '@/lib/inngest/client';
 import { anthropic, PRIMITIVE_DRAFT_MODEL } from '@/lib/ai/anthropic';
 import { buildDraftSystemPrompt, buildDraftUserPrompt, parseDraft } from '@/lib/ai/primitive-draft';
 import { runGates, type GateResult } from '@/lib/primitives/gates';
+import { lintPrimitive, formatLintFeedback } from '@/lib/primitives/lint';
 import { assertSchemaEvolution, type PropSchema, type PrimitiveMeta } from '@/lib/primitives/contract';
 
 // Phase 7 primitive authoring surface (spec 9). draftPrimitive (Opus + the skill) and
@@ -78,9 +79,12 @@ export async function runPrimitiveGates(input: { code: string; propSchema: PropS
   return { passed: out.passed, gates: out.gates, frameDataUrl };
 }
 
-// Persist a gated primitive: RE-RUN the gates server-side (don't trust the client),
-// enforce assertSchemaEvolution on an edit, bump the version, and emit primitive/deploy
-// to re-bundle the site (spec 9.3 / 9.7).
+// Persist a gated primitive. RE-RUN only the LINT gate server-side — the deterministic
+// security boundary the client must not bypass. The quality gates (smoke/brand) ran in
+// the studio and are non-deterministic (vision QA), so re-running them on save would
+// flakily reject already-passed primitives; the deploy's bundle is the compile safety net.
+// Then enforce assertSchemaEvolution on an edit, bump the version, and emit
+// primitive/deploy to re-bundle the site (spec 9.3 / 9.7).
 export async function savePrimitive(input: {
   primitiveId?: string;
   code: string;
@@ -90,8 +94,8 @@ export async function savePrimitive(input: {
   const supabase = await createClient();
   const accountId = await requireAccountId(supabase);
 
-  const gates = await runGates({ code: input.code, propSchema: input.propSchema });
-  if (!gates.passed) return { error: 'All gates must pass before saving.' };
+  const lint = lintPrimitive(input.code);
+  if (!lint.ok) return { error: `Lint (the security gate) must pass before saving:\n${formatLintFeedback(lint.violations)}` };
 
   let primitiveId = input.primitiveId;
   let version = 1;
