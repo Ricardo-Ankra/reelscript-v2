@@ -57,10 +57,17 @@ export async function runGates(input: { code: string; propSchema: PropSchema; th
     return { passed: false, gates };
   }
 
-  // 3. Smoke — render default sample props on Lambda; not-blank check. The frame is
-  // returned either way (pass = preview, fail = the failing frame).
+  // 3. Smoke — render default sample props on Lambda; not-blank check. A render error
+  // (e.g. an unresolved <Img>) FAILS the gate gracefully — it never crashes the run, so
+  // the bounded auto-fix loop gets the reason to fix.
   try {
-    const still = await renderGateStill(site.serveUrl);
+    let still: Awaited<ReturnType<typeof renderGateStill>>;
+    try {
+      still = await renderGateStill(site.serveUrl);
+    } catch (e) {
+      gates.push({ gate: 'smoke', passed: false, reason: `Render error: ${(e as Error).message.slice(0, 500)}` });
+      return { passed: false, gates };
+    }
     if (still.blank) {
       gates.push({ gate: 'smoke', passed: false, reason: 'Rendered frame is blank — the primitive drew nothing.' });
       return { passed: false, gates, frameUrl: still.frameUrl };
@@ -69,7 +76,13 @@ export async function runGates(input: { code: string; propSchema: PropSchema; th
 
     // 4. Brand integration — render the SAME bundle against the extreme stress kit with
     // overflowing text + vision-check each for overflow/clipping/clash (spec 9.6).
-    const brand = await runBrandGate(site.serveUrl, input.propSchema);
+    let brand: { result: GateResult; frameUrl?: string };
+    try {
+      brand = await runBrandGate(site.serveUrl, input.propSchema);
+    } catch (e) {
+      gates.push({ gate: 'brand', passed: false, reason: `Render error under the stress kit: ${(e as Error).message.slice(0, 500)}` });
+      return { passed: false, gates, frameUrl: still.frameUrl };
+    }
     gates.push(brand.result);
     return { passed: brand.result.passed, gates, frameUrl: brand.frameUrl ?? still.frameUrl };
   } finally {

@@ -19,11 +19,18 @@ import { frameLooksBlank } from '../ai/vision';
 
 const CACHE_ROOT = path.join(process.cwd(), '.primitive-cache');
 
-// The candidate imports `./theme` (the whitelist alias) for useTheme + the contract
-// types; we satisfy it from the real modules. Relative depth: .primitive-cache/<id>/.
-const THEME_SHIM = `export { useTheme } from '../../src/lib/primitives/theme-context';
+// The candidate imports `./theme` (the whitelist alias) for useTheme/useAsset + the
+// contract types; we satisfy it from the real modules. Relative depth: .primitive-cache/<id>/.
+const THEME_SHIM = `export { useTheme, useAsset } from '../../src/lib/primitives/theme-context';
+export type { ResolvedAsset } from '../../src/lib/primitives/theme-context';
 export type { Theme, PropSchema, PropDef, PrimitiveMeta } from '../../src/lib/primitives/contract';
 `;
+
+// A real, self-contained sample image (SVG data URL) the gate's AssetContext serves for
+// any `asset` prop, so media primitives resolve to a visible image during the smoke/brand
+// gates instead of a broken src.
+const SAMPLE_IMAGE_URL =
+  "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20600%20600'%3E%3Crect%20width='600'%20height='600'%20fill='%233B82F6'/%3E%3Ccircle%20cx='300'%20cy='300'%20r='170'%20fill='%23F59E0B'/%3E%3C/svg%3E";
 
 export interface GateSite {
   serveUrl: string;
@@ -107,7 +114,8 @@ const GENERATED_EMPTY = `import type { ComponentType } from 'react';
 // renders from, so it carries the authored primitives even though this file is empty here.
 export const DB_PRIMITIVES: Record<string, ComponentType<Record<string, unknown>>> = {};
 `;
-const DB_THEME_SHIM = `export { useTheme } from '../../../src/lib/primitives/theme-context';
+const DB_THEME_SHIM = `export { useTheme, useAsset } from '../../../src/lib/primitives/theme-context';
+export type { ResolvedAsset } from '../../../src/lib/primitives/theme-context';
 export type { Theme, PropSchema, PropDef, PrimitiveMeta } from '../../../src/lib/primitives/contract';
 `;
 
@@ -143,19 +151,23 @@ export async function deployLiveSite(primitives: { name: string; code: string }[
 // props/theme are plain data.
 function harnessEntry(sampleProps: Record<string, unknown>, theme: Theme): string {
   return `import { registerRoot, Composition, AbsoluteFill } from 'remotion';
-import { ThemeContext } from '../../src/lib/primitives/theme-context';
+import { ThemeContext, AssetContext } from '../../src/lib/primitives/theme-context';
 import Candidate from './Candidate';
 
 const DEFAULT_PROPS = ${JSON.stringify(sampleProps)};
 const DEFAULT_THEME = ${JSON.stringify(theme)};
+// Any 'asset' prop ('sample-asset') resolves to a visible image via useAsset.
+const SAMPLE_ASSETS = ${JSON.stringify({ 'sample-asset': { url: SAMPLE_IMAGE_URL, kind: 'image' } })};
 
 const Harness = ({ props, theme }) => {
   const t = theme || DEFAULT_THEME;
   return (
     <ThemeContext.Provider value={t}>
-      <AbsoluteFill style={{ backgroundColor: t.colors.background }}>
-        <Candidate {...(props || DEFAULT_PROPS)} />
-      </AbsoluteFill>
+      <AssetContext.Provider value={SAMPLE_ASSETS}>
+        <AbsoluteFill style={{ backgroundColor: t.colors.background }}>
+          <Candidate {...(props || DEFAULT_PROPS)} />
+        </AbsoluteFill>
+      </AssetContext.Provider>
     </ThemeContext.Provider>
   );
 };
