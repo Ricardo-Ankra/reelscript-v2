@@ -27,6 +27,17 @@ MOTION: all animation derives from the frame, never wall-clock:
   spring({ frame, fps, config: { damping: 200 } });                      // pops/bounces
 Size everything relative to useVideoConfig() (e.g. width * 0.2), so it adapts to any aspect ratio.
 
+ASSETS: an 'asset' prop holds a manifest asset id the composition AI supplies (a stock or
+uploaded image/video). RESOLVE it with useAsset — never use the id as a URL/src directly:
+  import { useAsset } from './theme';
+  const media = useAsset(props.asset);   // -> { url, kind: 'image' | 'video' } | undefined
+  if (!media) return null;               // always guard undefined
+  return media.kind === 'video'
+    ? <OffthreadVideo src={media.url} muted />
+    : <Img src={media.url} />;
+Import <Img>/<OffthreadVideo> from 'remotion' (never raw <img>/<video>). Only declare an
+'asset' prop if the primitive actually shows supplied media; pure graphic/text primitives don't.
+
 ALLOWED IMPORTS ONLY: 'react', 'remotion', '@remotion/google-fonts/*', './theme', './animation'.
 FORBIDDEN (the gate rejects these): Math.random, Date.now, performance.now, new Date(),
 fetch, XMLHttpRequest, eval, require, dynamic import(), hardcoded hex/rgb colours,
