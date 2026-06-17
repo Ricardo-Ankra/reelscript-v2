@@ -3,6 +3,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { serverEnv } from './env.server';
@@ -51,6 +52,12 @@ export async function signedPutUrl(
     new PutObjectCommand({ Bucket: serverEnv.r2.bucket, Key: key, ContentType: contentType }),
     { expiresIn: expiresInSeconds },
   );
+}
+
+/** Delete one R2 object. Used by regenerate's clear-first to remove a wiped scene's
+ *  audio; callers treat failures as best-effort. */
+export async function deleteObject(key: string): Promise<void> {
+  await client().send(new DeleteObjectCommand({ Bucket: serverEnv.r2.bucket, Key: key }));
 }
 
 /** Signed GET URL for a private R2 object. Default 1h; pass a longer TTL for
