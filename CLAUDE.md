@@ -73,6 +73,18 @@ authoritative and the `docs/` copy remains the design record.
   lifecycle + evolution guard, archive/restore/delete with usage gating. Backend proven
   end-to-end headlessly (`npm run drive:primitive`); the three-pane studio UI ships.
   Design docs under `docs/superpowers/specs/2026-06-0*`.)
+  - **Caption emphasis revision (2026-06-16):** **kinetic text is now folded into the
+    caption track — there is no longer a separate kinetic track.** The caption track
+    builds word-by-word (DOAC-style) off the same `scenes.word_alignments` timing, and
+    emphasis is a **three-axis annotation on the caption word** — `role` (→ typography,
+    brand table), `tone` (→ color, brand table + new `positive`/`negative` theme tokens),
+    `effect` (→ a gate-validated animation registry, AI-selected by word meaning).
+    **`KineticText` is retired by deprecation** (prop schema set to `deprecated`, not
+    removed, so in-flight specs don't hard-fail). **Superseded:** the old two-track
+    caption/kinetic split, the `bounce`/`pop` closed enum, and `kinetic_text_usage` as a
+    channel-level toggle. **Renamed:** `kinetic_text_usage` → `caption_emphasis_density`
+    (`off`/`sparing`/`liberal`). Full design:
+    `docs/superpowers/specs/2026-06-16-caption-emphasis-revision-design.md`.
   - **Phase 7 deferrals carried forward:** the **dynamic bundle** writes into the repo
     tree (`.primitive-cache/`, `remotion/primitives/db/`) — fine in dev, but **production
     bundling needs a writable workspace** (a build Lambda or a /tmp self-contained
@@ -94,8 +106,9 @@ authoritative and the `docs/` copy remains the design record.
     Function URL (the AWS account blocks public URLs); `remotion-user` carries a narrow
     `lambda:InvokeFunction` inline policy for it. Per-video caption/kinetic/music
     toggles come from **`video.settings` + channel defaults** (no settings UI until
-    Phase 8). **Kinetic duration is uncapped** — a long emphasis word suppresses
-    captions for its span; a duration cap is a deferred tuning option.
+    Phase 8). ~~**Kinetic duration is uncapped** — a long emphasis word suppresses
+    captions for its span~~ — **superseded by the 2026-06-16 caption emphasis revision**
+    (single caption track, no kinetic span / suppression machinery).
   - **Phase 3 deferrals carried forward:** ElevenLabs key is an **env var**
     (`ELEVENLABS_API_KEY`), not `api_credentials` (Phase 8); synthesis is
     **fallback-only** (no per-model `voice_profiles` rows/UI — Phase 8); the voice

@@ -34,7 +34,7 @@ export const DEFAULT_VIDEO_CONFIG: VideoConfig = {
   aspectRatio: '9:16',
   targetLengthSeconds: 30,
   fps: 30,
-  captions: false,
+  captions: true, // captions on by default (the animated caption track is the headline feature)
   music: false,
 };
 

@@ -21,7 +21,7 @@ export const STRESS_THEMES: StressTheme[] = [
   {
     name: 'very-light',
     theme: {
-      colors: { background: '#FFFFFF', foreground: '#0A0A0A', primary: '#111827', secondary: '#E5E7EB', accent: '#FF0099', bodyText: '#1F2937' },
+      colors: { background: '#FFFFFF', foreground: '#0A0A0A', primary: '#111827', secondary: '#E5E7EB', accent: '#FF0099', bodyText: '#1F2937', positive: '#047857', negative: '#B91C1C' },
       fonts: { display: 'Playfair Display Extra Bold Italic', body: 'Source Serif 4 SemiBold', mono: 'monospace' },
       logos: {},
       motion: 'punchy',
@@ -30,7 +30,7 @@ export const STRESS_THEMES: StressTheme[] = [
   {
     name: 'very-dark',
     theme: {
-      colors: { background: '#000000', foreground: '#FAFAFA', primary: '#0EA5E9', secondary: '#1F2937', accent: '#00E5FF', bodyText: '#E5E7EB' },
+      colors: { background: '#000000', foreground: '#FAFAFA', primary: '#0EA5E9', secondary: '#1F2937', accent: '#00E5FF', bodyText: '#E5E7EB', positive: '#34D399', negative: '#F87171' },
       fonts: { display: 'Archivo Black Condensed Ultra', body: 'IBM Plex Sans Medium', mono: 'monospace' },
       logos: {},
       motion: 'punchy',

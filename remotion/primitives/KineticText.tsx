@@ -1,7 +1,14 @@
 import type { FC } from 'react';
 import { interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import { useTheme } from '../../src/lib/primitives/theme-context';
-import { KINETIC_CENTER_TOP_PCT, KINETIC_UPPER_TOP_PCT, withAlpha } from '../layout';
+import { withAlpha } from '../layout';
+
+// DEPRECATED (caption emphasis revision, 2026-06-16): superseded by the animated
+// caption track. Retained only so in-flight specs that still reference KineticText
+// keep rendering. Vertical anchors are inlined here (the shared zone contract in
+// layout.ts was removed). Do not place this in new compositions.
+const KINETIC_UPPER_TOP_PCT = 14;
+const KINETIC_CENTER_TOP_PCT = 40;
 
 // Kinetic text (spec 4.2.2 / 8.4): a large, animated, brand-styled emphasis word
 // frame-aligned to the voiceover. Reads colour + Display font from the theme and

@@ -24,3 +24,9 @@ export const COMPOSITION_MODEL = 'claude-sonnet-4-6';
 // Primitive drafting = Opus with the primitive skill loaded (spec 3.4 / 9.5). Pinned
 // until model_routing (Phase 8). Code generation wants the strongest model.
 export const PRIMITIVE_DRAFT_MODEL = 'claude-opus-4-8';
+
+// Caption emphasis pass = Haiku (caption emphasis revision, 2026-06-16). A small,
+// cheap, per-scene classification (pick emphasis words + label axes), pinned here
+// until model_routing (Phase 8). Reliability comes from the firm prompt + the
+// coherence validator; a bad/missing pass degrades to no emphasis, never an error.
+export const EMPHASIS_MODEL = 'claude-haiku-4-5-20251001';

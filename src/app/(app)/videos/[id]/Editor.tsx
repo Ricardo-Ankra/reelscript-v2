@@ -7,6 +7,7 @@ import { estimateSynthesisCost } from '@/lib/voice/estimate';
 import { synthesizeScenes, getSceneAudioUrl } from './voice-actions';
 import { startVideoRender, getRenderState } from './render-actions';
 import { MusicPanel } from './MusicPanel';
+import { VideoSettingsPanel } from './VideoSettingsPanel';
 
 export type SceneWithShots = {
   id: string;
@@ -28,11 +29,13 @@ export function Editor({
   title,
   initialScenes,
   initialStatus,
+  initialSettings,
 }: {
   videoId: string;
   title: string;
   initialScenes: SceneWithShots[];
   initialStatus: string | null;
+  initialSettings: Record<string, unknown>;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [scenes, setScenes] = useState<SceneWithShots[]>(initialScenes);
@@ -350,6 +353,10 @@ export function Editor({
             {anySynthesizing ? 'Synthesizing…' : 'Synthesize all'}
           </button>
         </div>
+      )}
+
+      {ordered.length > 0 && (
+        <VideoSettingsPanel videoId={videoId} initialSettings={initialSettings} />
       )}
 
       {ordered.length > 0 && (

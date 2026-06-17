@@ -29,7 +29,7 @@ export default function ProgressBar({ label, percent }: { label: string; percent
 `;
 
 const THEME: Theme = {
-  colors: { background: '#0B1F3A', foreground: '#FFFFFF', primary: '#3B82F6', secondary: '#1E3A8A', accent: '#F59E0B', bodyText: '#E2E8F0' },
+  colors: { background: '#0B1F3A', foreground: '#FFFFFF', primary: '#3B82F6', secondary: '#1E3A8A', accent: '#F59E0B', bodyText: '#E2E8F0', positive: '#22C55E', negative: '#EF4444' },
   fonts: { display: 'Poppins', body: 'Poppins', mono: 'monospace' },
   logos: {},
   motion: 'standard',

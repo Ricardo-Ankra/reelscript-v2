@@ -17,12 +17,10 @@ import {
   assembleSpec,
   runAgenticComposition,
   collectReferencedAssetIds,
-  collectKineticSpans,
   planStockResolution,
   SEARCH_STOCK_TOOL,
   type CompositionBrief,
   type SceneBrief,
-  type KineticConfig,
   type LoopBlock,
 } from '@/lib/composition/compose';
 import { validateSpec, formatGate1Feedback, type Gate1Error } from '@/lib/composition/gate1';
@@ -31,16 +29,13 @@ import { hasStockKeys, searchStock } from '@/lib/assets/search';
 import type { StockCandidate } from '@/lib/assets/candidate';
 import { resolveStockAssets, resolveResourceAssets } from '@/lib/assets/resolve';
 import { runGate2 } from '@/lib/composition/gate2';
-import {
-  buildCaptions,
-  suppressDuringSpans,
-  reconstructWords,
-  toSrt,
-  toVtt,
-  type SceneCaptionInput,
-  type CaptionSegment,
-  type CaptionStyle,
-} from '@/lib/captions/segments';
+import { chunksToSegments, toSrt, toVtt, type CaptionStyle } from '@/lib/captions/segments';
+import { tokenizeSpokenWords } from '@/lib/captions/tokenize';
+import { buildCaptionChunks } from '@/lib/captions/build-chunks';
+import { annotateSceneEmphasis } from '@/lib/captions/emphasis-annotate';
+import type { CaptionChunk } from '@/lib/captions/types';
+import type { EmphasisDensity } from '@/lib/captions/emphasis-pass';
+import type { CaptionEmphasisConfig } from '@/lib/captions/emphasis-style';
 import { selectMusicTrack, type MusicTrack } from '@/lib/music/select';
 import { canonicalizeMusicParams, type MusicParams } from '@/lib/music/params';
 import type { TtsAlignment } from '@/lib/voice/alignment';
@@ -133,19 +128,39 @@ export const renderVideo = inngest.createFunction(
         return { ok: false as const, errors: outcome.errors ?? [] };
       }
 
-      // Captions (system-built, spec 8.5): full segments feed the SRT/VTT sidecars;
-      // the BURNT track is the full set minus any segment overlapping a kinetic span
-      // (collision prevention by construction). Music is NOT added to the spec — the
-      // render stays voiceover-only and the ffmpeg re-mux owns music (spec 10.1).
+      // Captions (caption emphasis revision, spec 8.5): the single animated track.
+      // Per scene: one canonical tokenization → the Haiku emphasis pass (best-effort,
+      // skipped when density is off) → chunk + attach emphasis by index. The same
+      // chunks feed the SRT/VTT sidecars (emphasis-agnostic). Music is NOT in the spec
+      // — the render stays voiceover-only and the ffmpeg re-mux owns music (spec 10.1).
       const spec = outcome.spec;
-      let fullCaptions: CaptionSegment[] = [];
+      const fullCaptionChunks: CaptionChunk[] = [];
       if (brief.captionsEnabled) {
-        fullCaptions = buildCaptions(brief.captionInputs, {
-          fps: brief.metadata.fps,
-          maxCharsPerLine: brief.maxCharsPerLine,
-        });
-        spec.captions = suppressDuringSpans(fullCaptions, collectKineticSpans(spec));
+        // captionInputs and spec.scenes are index-aligned (both in DB scene order),
+        // so each scene's AI-emitted captionFocus tags that scene's chunks.
+        for (let i = 0; i < brief.captionInputs.length; i++) {
+          const ci = brief.captionInputs[i];
+          if (!ci.alignment) continue; // silent scene
+          const focus = spec.scenes[i]?.captionFocus;
+          const emphasis =
+            brief.captionEmphasisDensity === 'off'
+              ? []
+              : await annotateSceneEmphasis({
+                  alignment: ci.alignment,
+                  sceneScript: ci.narration,
+                  density: brief.captionEmphasisDensity,
+                });
+          const chunks = buildCaptionChunks(tokenizeSpokenWords(ci.alignment), emphasis, {
+            fps: brief.metadata.fps,
+            startFrame: ci.startFrame,
+            maxChars: brief.maxCharsPerLine,
+          });
+          if (focus) for (const c of chunks) c.focus = focus;
+          fullCaptionChunks.push(...chunks);
+        }
+        spec.captions = fullCaptionChunks;
         if (brief.captionStyle) spec.captionStyle = brief.captionStyle;
+        if (brief.captionEmphasis) spec.captionEmphasis = brief.captionEmphasis;
       }
 
       return {
@@ -153,7 +168,7 @@ export const renderVideo = inngest.createFunction(
         spec,
         midSceneIntent: midSceneIntent(briefWithResources, spec),
         captionsEnabled: brief.captionsEnabled,
-        fullCaptions,
+        fullCaptionChunks,
         musicTrackId: brief.musicTrackId,
         musicParams: brief.musicParams,
       };
@@ -281,8 +296,9 @@ export const renderVideo = inngest.createFunction(
     if (composed.captionsEnabled) {
       await step.run('caption-sidecars', async () => {
         const fps = durableSpec.metadata.fps;
-        await putObject(`captions/${renderId}.srt`, toSrt(composed.fullCaptions, fps), 'application/x-subrip');
-        await putObject(`captions/${renderId}.vtt`, toVtt(composed.fullCaptions, fps), 'text/vtt');
+        const segments = chunksToSegments(composed.fullCaptionChunks);
+        await putObject(`captions/${renderId}.srt`, toSrt(segments, fps), 'application/x-subrip');
+        await putObject(`captions/${renderId}.vtt`, toVtt(segments, fps), 'text/vtt');
       });
     }
 
@@ -370,15 +386,18 @@ const DIMS: Record<string, { width: number; height: number }> = {
 
 // The brief plus the Phase-5 routing facts (account, stock need, resource ids) and
 // the Phase-6 polish facts: caption inputs/style, and the music selection. Captions
-// are built AFTER compose (suppression needs the kinetic spans), so loadBrief returns
-// the raw per-scene inputs rather than finished segments.
+// are built AFTER compose (the emphasis pass needs the scene script), so loadBrief
+// returns the raw per-scene inputs (alignment + offset + narration) rather than
+// finished chunks.
 type LoadedBrief = CompositionBrief & {
   accountId: string;
   needsStock: boolean;
   resourceIds: string[];
   captionsEnabled: boolean;
   captionStyle?: CaptionStyle;
-  captionInputs: SceneCaptionInput[];
+  captionEmphasis?: CaptionEmphasisConfig;
+  captionEmphasisDensity: EmphasisDensity | 'off';
+  captionInputs: { alignment: TtsAlignment | null; startFrame: number; narration: string }[];
   maxCharsPerLine?: number;
   musicTrackId: string | null;
   musicParams: MusicParams;
@@ -413,13 +432,14 @@ async function loadBrief(
   const captionsEnabled =
     typeof settings.captions_on === 'boolean' ? (settings.captions_on as boolean) : ratio !== '16:9';
   const captionStyle = (brandKit.caption_style as CaptionStyle | undefined) ?? undefined;
-  // Kinetic usage off|sparing|liberal (spec 4.2.2).
-  const kineticUsageRaw =
-    (settings.kinetic_text_usage as string) ?? (channelDefaults.kinetic_text_usage as string) ?? 'sparing';
-  const kinetic: KineticConfig = {
-    enabled: kineticUsageRaw !== 'off',
-    usage: kineticUsageRaw === 'liberal' ? 'liberal' : 'sparing',
-  };
+  const captionEmphasis = (brandKit.caption_emphasis as CaptionEmphasisConfig | undefined) ?? undefined;
+  // Caption emphasis density off|sparing|liberal (caption emphasis revision).
+  const densityRaw =
+    (settings.caption_emphasis_density as string) ??
+    (channelDefaults.caption_emphasis_density as string) ??
+    'sparing';
+  const captionEmphasisDensity: LoadedBrief['captionEmphasisDensity'] =
+    densityRaw === 'off' ? 'off' : densityRaw === 'liberal' ? 'liberal' : 'sparing';
   // Music opt-in (spec 4.2.3) + the mix params (defaults until the Phase-8 panel).
   const musicOn =
     typeof settings.music_on === 'boolean'
@@ -460,7 +480,7 @@ async function loadBrief(
   }
 
   const assets: AssetManifestEntry[] = [];
-  const captionInputs: SceneCaptionInput[] = [];
+  const captionInputs: LoadedBrief['captionInputs'] = [];
   let offset = 0; // cumulative absolute start frame
   const briefScenes: SceneBrief[] = scenes.map((s) => {
     const position = s.position as number;
@@ -472,25 +492,16 @@ async function loadBrief(
       assets.push({ id: voiceoverAssetId, kind: 'audio', r2Key: s.audio_r2_key as string });
     }
     const alignment = (s.word_alignments as TtsAlignment | null) ?? null;
-    captionInputs.push({ alignment, startFrame: offset });
-    // Spoken words as SCENE-RELATIVE frame windows, for kinetic alignment.
-    let words: SceneBrief['words'];
-    if (kinetic.enabled && alignment) {
-      words = reconstructWords(alignment).map((w) => ({
-        t: w.text,
-        s: Math.round(w.startSec * fps),
-        e: Math.round(w.endSec * fps),
-      }));
-    }
+    const narration = (s.narration as string) ?? '';
+    captionInputs.push({ alignment, startFrame: offset, narration });
     offset += durationInFrames;
     return {
       id: s.id as string,
       position,
-      narration: (s.narration as string) ?? '',
+      narration,
       shotHints: shotsByScene.get(s.id as string) ?? [],
       durationInFrames,
       voiceoverAssetId,
-      ...(words ? { words } : {}),
     };
   });
 
@@ -517,13 +528,14 @@ async function loadBrief(
     theme,
     assets,
     scenes: briefScenes,
-    kinetic,
     registry,
     accountId,
     needsStock,
     resourceIds: [...resourceIdSet],
     captionsEnabled,
     captionStyle,
+    captionEmphasis,
+    captionEmphasisDensity,
     captionInputs,
     maxCharsPerLine: captionStyle?.maxCharsPerLine,
     musicTrackId,
@@ -603,7 +615,7 @@ type ComposeOutcome = {
 // Gate 1, with budget-2 validate-and-retry. brief already carries every resolved
 // asset (audio + any pre-resolved resources).
 async function proceduralCompose(brief: CompositionBrief): Promise<ComposeOutcome> {
-  const system = buildCompositionSystemPrompt(brief.registry, { kinetic: brief.kinetic }); // stock off; registry + kinetic threaded
+  const system = buildCompositionSystemPrompt(brief.registry); // stock off; registry threaded
   const messages: { role: 'user' | 'assistant'; content: string }[] = [
     { role: 'user', content: buildCompositionUserPrompt(brief) },
   ];

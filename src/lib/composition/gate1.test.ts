@@ -5,7 +5,7 @@ import type { CompositionSpec } from './spec.ts';
 import type { Theme } from '../primitives/contract.ts';
 
 const theme: Theme = {
-  colors: { background: '#000', foreground: '#fff', primary: '#00f', secondary: '#003', accent: '#fa0', bodyText: '#eee' },
+  colors: { background: '#000', foreground: '#fff', primary: '#00f', secondary: '#003', accent: '#fa0', bodyText: '#eee', positive: '#0f0', negative: '#f00' },
   fonts: { display: 'Poppins', body: 'Poppins', mono: 'monospace' },
   logos: {},
   motion: 'standard',

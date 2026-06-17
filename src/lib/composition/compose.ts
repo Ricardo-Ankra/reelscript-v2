@@ -16,6 +16,9 @@ import type {
   AssetManifestEntry,
 } from './spec';
 import type { StockCandidate, StockSearchParams } from '../assets/candidate';
+import type { CaptionFocus } from '../captions/types';
+
+const CAPTION_FOCUSES: readonly CaptionFocus[] = ['visual', 'text', 'balanced'];
 
 export interface SceneBrief {
   id: string;
@@ -24,17 +27,6 @@ export interface SceneBrief {
   shotHints: string[]; // the shots' descriptions/intents from the script
   durationInFrames: number; // system-fixed, from the synthesized audio
   voiceoverAssetId?: string; // manifest id for this scene's audio
-  // Spoken words with their SCENE-RELATIVE frame windows (Phase 6), so the AI can
-  // frame-align KineticText emphasis to an actual word. Present only when kinetic is
-  // enabled; derived from the persisted word_alignments.
-  words?: { t: string; s: number; e: number }[];
-}
-
-// Kinetic-text config for this video (spec 4.2.2), distilled to what the prompt
-// needs. usage drives how freely the AI reaches for KineticText.
-export interface KineticConfig {
-  enabled: boolean;
-  usage: 'sparing' | 'liberal';
 }
 
 export interface CompositionBrief {
@@ -42,7 +34,6 @@ export interface CompositionBrief {
   theme: Theme;
   assets: AssetManifestEntry[];
   scenes: SceneBrief[];
-  kinetic?: KineticConfig; // omitted ⇒ kinetic text disabled
   // The primitive registry the AI may compose with (Phase 7): starter set ∪ the
   // account's active+deployed authored primitives. Omitted ⇒ STARTER_REGISTRY.
   registry?: StarterRegistry;
@@ -50,7 +41,7 @@ export interface CompositionBrief {
 
 // What the AI returns: per-scene instance lists, nothing else.
 export interface AiComposition {
-  scenes: { sceneId: string; instances: PrimitiveInstance[] }[];
+  scenes: { sceneId: string; captionFocus?: CaptionFocus; instances: PrimitiveInstance[] }[];
 }
 
 // --- prompts ----------------------------------------------------------------
@@ -101,9 +92,13 @@ export function buildStockToolResult(candidates: StockCandidate[], max = 6): Con
 
 export function buildCompositionSystemPrompt(
   registry: StarterRegistry = STARTER_REGISTRY,
-  opts: { stockEnabled?: boolean; kinetic?: KineticConfig } = {},
+  opts: { stockEnabled?: boolean } = {},
 ): string {
   const primitives = Object.entries(registry)
+    // A primitive with no active props is not offered (e.g. the deprecated
+    // KineticText — captions now own emphasis). It stays renderable for in-flight
+    // specs, but the AI is never shown it, so no new spec places it.
+    .filter(([, prim]) => aiFacingSchema(prim.propSchema).length > 0)
     .map(([name, prim]) => {
       const props = aiFacingSchema(prim.propSchema)
         .map((p) => {
@@ -121,22 +116,6 @@ export function buildCompositionSystemPrompt(
   const backgroundRule = opts.stockEnabled
     ? '- Backgrounds: prefer REAL footage — search_stock for a fitting photo/video and place it as an Image or Video at layer 0 (fit "cover"). Use a solid FullBleed only when no candidate fits or for a deliberately graphic scene.'
     : '- Every scene needs a background — start each scene with a FullBleed (layer 0). Compose from these graphic/typographic primitives only (no stock footage available).';
-
-  // Kinetic text (spec 8.4). When enabled, guide frame-aligned emphasis; when not,
-  // forbid the primitive outright (it's in the list, so silence isn't enough).
-  const kineticSection = opts.kinetic?.enabled
-    ? [
-        '',
-        'Kinetic text (animated emphasis):',
-        `- Use KineticText ${opts.kinetic.usage === 'liberal' ? 'freely but purposefully' : 'SPARINGLY — only at the strongest emphasis beats'}.`,
-        '- It is NOT a caption or a transcript: pick 1–4 words that are actually spoken,',
-        '  and FRAME-ALIGN it — set startFrame/durationInFrames to that word\'s window from',
-        '  the "spoken words" timings given for the scene.',
-        '- Choose animation "bounce" or "pop" (the ONLY two) and position "upper" or',
-        '  "center". The lower third is reserved for captions — never place it there.',
-        '- Layer it ABOVE the background (and above any Text) so it reads.',
-      ]
-    : ['', '- Do NOT use the KineticText primitive in this video.'];
 
   const stockSection = opts.stockEnabled
     ? [
@@ -167,36 +146,49 @@ export function buildCompositionSystemPrompt(
     '- Each instance has `startFrame` (≥0, relative to the scene) and `durationInFrames`',
     '  (>0). startFrame + durationInFrames must NOT exceed the scene duration.',
     '- Keep on-screen text short enough to read; the narration is spoken, not shown verbatim.',
-    ...kineticSection,
+    '',
+    'Captions (the system burns these in — you must leave room for them):',
+    '- Animated captions show the SPOKEN words, with emphasis, low-to-centre of frame.',
+    '  They are the PRIMARY on-screen text. Do NOT add a Text primitive that repeats or',
+    '  paraphrases the narration (e.g. a headline of what is being said) — the captions',
+    '  already show it; doing so double-prints and collides.',
+    '- Keep focal instances (Text, bars/charts, large Shapes) OUT of the caption band.',
+    '  Full-frame backgrounds at layer 0 (Image/Video/FullBleed) are fine underneath.',
+    '- The Text primitive renders CENTRED vertically (only `align` is horizontal), so a',
+    '  Text headline sits exactly where centred captions go. Use Text sparingly — for a',
+    '  label or a title on a scene with little/no narration — not as a headline over captions.',
+    '  If you DO place a centred Text, set that scene\'s captionFocus to "visual" so the',
+    '  captions sit in the lower third, clear of it.',
+    '- Set each scene\'s "captionFocus" to place the caption band by what the scene leads with:',
+    '    "visual"  → footage is the point: captions drop to the lower third and shrink.',
+    '                Best when you place striking Image/Video. Keep the rest of the frame clear.',
+    '    "text"    → the words are the point (a claim, hook, punchline): captions sit centre,',
+    '                larger. Do NOT also place a centred Text here — the captions ARE that text.',
+    '    "balanced" (default, omit the field) → captions sit lower-centre; avoid centred Text',
+    '                that reaches the lower half of the frame.',
     ...stockSection,
     '',
     'Final answer: output ONLY a single JSON object, no prose, no markdown fences:',
-    '{"scenes":[{"sceneId":"<id>","instances":[',
+    '{"scenes":[{"sceneId":"<id>","captionFocus":"visual|text|balanced","instances":[',
     '  {"primitive":"Image","props":{"asset":"<assetId>","fit":"cover"},"layer":0,"startFrame":0,"durationInFrames":<sceneDuration>},',
     '  {"primitive":"Text","props":{"text":"...","colorToken":"foreground","fontSizePx":84,"align":"center"},"layer":1,"startFrame":6,"durationInFrames":<...>}',
     ']}]}',
+    '(captionFocus is optional — omit it for "balanced".)',
   ].join('\n');
 }
 
 export function buildCompositionUserPrompt(brief: CompositionBrief): string {
   const theme = brief.theme;
   const colorTokens = Object.keys(theme.colors).join(', ');
-  const kineticOn = brief.kinetic?.enabled;
   const scenes = brief.scenes
     .map((s) => {
       const hints = s.shotHints.length ? s.shotHints.map((h) => `    - ${h}`).join('\n') : '    (none)';
-      const lines = [
+      return [
         `Scene ${s.position} (sceneId "${s.id}", durationInFrames ${s.durationInFrames}):`,
         `  narration: ${JSON.stringify(s.narration)}`,
         `  shot intents:`,
         hints,
-      ];
-      // Spoken-word frame windows for kinetic alignment (scene-relative frames).
-      if (kineticOn && s.words && s.words.length) {
-        const wl = s.words.map((w) => `${w.t}@${w.s}-${w.e}`).join(' ');
-        lines.push(`  spoken words (frame windows for KineticText alignment): ${wl}`);
-      }
-      return lines.join('\n');
+      ].join('\n');
     })
     .join('\n\n');
 
@@ -233,6 +225,10 @@ export function parseComposition(text: string): AiComposition | null {
   const scenes = (parsed as AiComposition).scenes;
   for (const s of scenes) {
     if (!s || typeof s.sceneId !== 'string' || !Array.isArray(s.instances)) return null;
+    // captionFocus is optional; drop an unknown value (renderer defaults to balanced).
+    if (s.captionFocus !== undefined && !CAPTION_FOCUSES.includes(s.captionFocus)) {
+      delete s.captionFocus;
+    }
   }
   return { scenes };
 }
@@ -307,7 +303,7 @@ export async function runAgenticComposition(
   deps: AgenticDeps,
 ): Promise<AgenticResult> {
   const composeRegistry = brief.registry ?? STARTER_REGISTRY;
-  const system = buildCompositionSystemPrompt(composeRegistry, { stockEnabled: true, kinetic: brief.kinetic });
+  const system = buildCompositionSystemPrompt(composeRegistry, { stockEnabled: true });
   const userPrompt = deps.feedback
     ? `${buildCompositionUserPrompt(brief)}\n\n${deps.feedback}`
     : buildCompositionUserPrompt(brief);
@@ -419,35 +415,22 @@ export function planStockResolution(
 // Assemble the full, durable (key-based) spec from the AI's instances + the brief.
 // Scenes the AI omitted get an empty instance list (Gate 1 will flag them).
 export function assembleSpec(ai: AiComposition, brief: CompositionBrief): CompositionSpec {
-  const instancesByScene = new Map(ai.scenes.map((s) => [s.sceneId, s.instances]));
+  const byScene = new Map(ai.scenes.map((s) => [s.sceneId, s]));
   return {
     version: 2,
     metadata: brief.metadata,
     theme: brief.theme,
     assets: brief.assets,
-    scenes: brief.scenes.map((s) => ({
-      id: s.id,
-      durationInFrames: s.durationInFrames,
-      ...(s.voiceoverAssetId ? { voiceover: { assetId: s.voiceoverAssetId } } : {}),
-      instances: instancesByScene.get(s.id) ?? [],
-    })),
+    scenes: brief.scenes.map((s) => {
+      const ai = byScene.get(s.id);
+      return {
+        id: s.id,
+        durationInFrames: s.durationInFrames,
+        ...(s.voiceoverAssetId ? { voiceover: { assetId: s.voiceoverAssetId } } : {}),
+        ...(ai?.captionFocus ? { captionFocus: ai.captionFocus } : {}),
+        instances: ai?.instances ?? [],
+      };
+    }),
   };
 }
 
-// Absolute frame windows of every KineticText instance in an assembled spec. Feeds
-// caption suppression (§collision prevention): a caption overlapping one of these is
-// dropped from the BURNT track so the kinetic word and its caption echo never co-show.
-export function collectKineticSpans(spec: CompositionSpec): { fromFrame: number; toFrame: number }[] {
-  const spans: { fromFrame: number; toFrame: number }[] = [];
-  let offset = 0;
-  for (const scene of spec.scenes) {
-    for (const inst of scene.instances) {
-      if (inst.primitive === 'KineticText') {
-        const from = offset + Number(inst.startFrame);
-        spans.push({ fromFrame: from, toFrame: from + Number(inst.durationInFrames) });
-      }
-    }
-    offset += scene.durationInFrames;
-  }
-  return spans;
-}
