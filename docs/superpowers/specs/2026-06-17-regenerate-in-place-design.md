@@ -27,11 +27,25 @@ creation going forward, and prefills it (editable) in the regenerate form. Video
 created before the column exists have `prompt = null` → the form starts empty and
 the operator types it.
 
-## Schema change
+## Schema changes
 
-Add `prompt text` (nullable) to `videos`. Migration only; RLS unchanged (the
-existing `videos` account-isolation policy covers it). `startScriptGeneration` is
-extended to write `prompt` into the insert it already builds.
+Two migrations:
+
+1. **`videos.prompt`** — add `prompt text` **nullable, with no backfill**. Pre-column
+   videos have `prompt = null` → the regenerate form starts empty (as designed). RLS
+   unchanged (the existing `videos` account-isolation policy covers it).
+   `startScriptGeneration` is extended **in this same slice** to write `prompt` into
+   the insert it already builds — this MUST ship with the column, or every
+   newly-created video would also regenerate from an empty prompt (silently). The
+   plan orders the action change with the migration.
+
+2. **`jobs` partial unique index** (concurrency enforcement — see the guard below):
+   `create unique index ... on jobs (video_id) where type = 'script_generation' and
+   status in ('queued','running')`. This makes "at most one in-flight generation per
+   video" a DB invariant, so two racing `regenerateVideo` calls (double-click, two
+   tabs) can't both enqueue. Partial (only in-flight rows), so completed/failed jobs
+   never conflict, and it is scoped to `script_generation` so it does not constrain
+   coexisting `voice_synthesis`/`render` jobs.
 
 ## UI
 
@@ -69,35 +83,63 @@ export async function regenerateVideo(
 ): Promise<{ ok: true } | { ok: false; reason: string }>;
 ```
 
-Steps (RLS-scoped server client throughout):
+**The action performs NO destructive operation.** The wipe lives in the worker (see
+below), so the only thing the action can fail at is enqueuing — which leaves the
+current scenes intact. Steps (RLS-scoped server client throughout):
 
-1. **Guard.** Reject if any `jobs` row for this video has
+1. **Guard (friendly message).** Reject if any `jobs` row for this video has
    `type ∈ {script_generation, voice_synthesis, render}` and
    `status ∈ {queued, running}` → `{ ok:false, reason: 'A job is already in progress for this video.' }`.
-   Never wipe mid-render or double-generate.
-2. **Validate input.** `prompt` non-empty (trimmed); `targetLengthSeconds` a
-   positive number within sane bounds (e.g. 5–180). Reject otherwise.
+   This is the *friendly* check; the DB partial unique index (above) is the
+   *authoritative* one against the read-then-insert TOCTOU.
+2. **Validate input.** `prompt` non-empty (trimmed); `targetLengthSeconds` an
+   integer within bounds **5–180** (seconds). Reject otherwise.
 3. **Load context.** Fetch the video (`account_id`, `channel_id`, `settings`) and
    its channel (name + `brand_voice.tone`). Not found / not owned (RLS) →
    `{ ok:false, reason }`.
 4. **Persist.** Write `videos.prompt = prompt`; merge `target_length` into
-   `videos.settings` via the existing `merge_video_settings` RPC.
-5. **Wipe.** Read current scene ids; best-effort delete their R2 audio
-   (`audio/{sceneId}.mp3`) — failures logged, never block; then
-   `DELETE FROM scenes WHERE video_id = …` (shots cascade via FK).
-6. **Re-run.** Insert a fresh `jobs` row (`type='script_generation'`,
-   `status='queued'`) and emit `script/generate` with
-   `{ jobId, videoId, accountId, prompt, config, brand }`, where:
+   `videos.settings` via the existing `merge_video_settings` RPC. (Not destructive;
+   the worker reads neither — they drive the panel display and future regenerates.)
+5. **Enqueue + emit (the last action step).** Insert a fresh `jobs` row
+   (`type='script_generation'`, `status='queued'`) then emit `script/generate` with
+   `{ jobId, videoId, accountId, prompt, config, brand, replace: true }`, where:
    - `config` = `buildGenerateConfig(settings, targetLengthSeconds)` — the
      `VideoConfig` rebuilt from the video's settings with the new length.
    - `brand` = `buildBrandContext(channel)` — `{ channelName, tone? }`.
-   This payload matches `startScriptGeneration`'s exactly, so the worker is
-   unchanged.
-7. Return `{ ok:true }`.
+   The payload matches `startScriptGeneration`'s plus the new `replace` flag.
+   If the `jobs` insert hits the partial unique index (Postgres `23505`), treat it as
+   `{ ok:false, reason: 'A job is already in progress for this video.' }` — the
+   authoritative concurrency stop.
+6. Return `{ ok:true }`.
 
-The script worker (`generate-script.ts`) and its `upsert_scene_with_shots` RPC are
-unchanged: after the wipe there are no existing scenes, so the new run inserts a
-clean set (and is still idempotent on `(video_id, position)` if Inngest retries).
+### Why the wipe is in the worker (and last)
+
+The destructive `DELETE FROM scenes` is the worker's **first step**, not the action's
+— for two reasons:
+
+- **Crash-safety / no void state.** The only durable unit is the queued job. If the
+  action crashes any time before the `script/generate` emit, nothing is destroyed
+  (scenes intact, operator just retries). Once the job is enqueued, the worker
+  runs — and re-runs on Inngest retry — performing wipe-then-generate as one unit.
+  There is no window where scenes are gone but no job exists to recreate them.
+- **No action↔worker race.** If the action deleted scenes *after* emitting, the
+  worker (which Inngest may start within milliseconds) could insert new scenes that
+  the action's `DELETE … WHERE video_id` then removes — flaky missing scenes. Making
+  the worker the sole writer of both the delete and the inserts removes the race.
+
+### Worker change: clear-first on `replace`
+
+`generate-script.ts` gains a guarded **clear-first** step, run only when the event's
+`replace === true` (initial generation omits it → unchanged behavior):
+
+1. Read existing scene ids for `videoId`; best-effort delete their R2 audio
+   (`audio/{sceneId}.mp3`) — failures logged, never block.
+2. `DELETE FROM scenes WHERE video_id = …` (shots cascade via FK).
+
+Then it streams the new scenes exactly as today via `upsert_scene_with_shots`. On an
+Inngest retry the clear-first simply re-deletes and the stream re-inserts —
+idempotent. (For initial generation, `replace` is false/absent and this step is
+skipped, so that path is untouched.)
 
 ## What is wiped vs kept
 
@@ -110,22 +152,36 @@ clean set (and is still idempotent on `(video_id, position)` if Inngest retries)
 | `cost_events` | **kept** (append-only ledger) |
 | last render preview in the editor | stays visible (stale vs new scenes) until re-render — acceptable |
 
+The scene/shot/audio deletion is performed by the **worker's clear-first step** (see
+above), not the action — so it happens only after the job is durably enqueued.
+
 ## Data flow
 
 ```
 VideoSettingsPanel (Regenerate form)
         │ regenerateVideo(videoId, { prompt, targetLengthSeconds })
         ▼
-regenerate-actions.ts
-  guard → validate → persist (prompt + settings RPC) → wipe (R2 + scenes) → emit script/generate
+regenerate-actions.ts  (NO destructive op)
+  guard → validate → persist (prompt + settings RPC) → enqueue job → emit script/generate {replace:true}
         ▼
-generate-script.ts worker  →  upsert_scene_with_shots (new scenes)
+generate-script.ts worker
+  clear-first (best-effort R2 audio delete → DELETE scenes)  →  stream new scenes (upsert_scene_with_shots)
         ▼
 editor Realtime: DELETE(old scenes) + INSERT(new) + jobs 'Generating…' pill
 ```
 
-No changes to the editor's Realtime or the worker. `page.tsx` adds `prompt` to its
-videos select and threads it (`initialPrompt`) to `Editor` → `VideoSettingsPanel`.
+The editor's Realtime is unchanged; the worker gains the guarded clear-first step.
+`page.tsx` adds `prompt` to its videos select and threads it (`initialPrompt`) to
+`Editor` → `VideoSettingsPanel`.
+
+## target_length units (consistency)
+
+`target_length` is stored and read **in seconds** everywhere: `SEED_VIDEO_SETTINGS`
+seeds it from `DEFAULT_VIDEO_CONFIG.targetLengthSeconds`, the panel displays it as
+`{target_length}s`, and `buildGenerateConfig` maps `settings.target_length` →
+`config.targetLengthSeconds`. The regenerate form's `targetLengthSeconds` and step-4's
+merge into `target_length` use the same unit, so the merge never writes a different
+type/label into the key. A unit-agreement assertion is in the tests below.
 
 ## Pure, testable core
 
@@ -145,8 +201,12 @@ app run (not unit-tested, matching `music-actions.ts` / `render-actions.ts`).
 
 - **Pure (`node --test`)** on `regenerate.ts`: `buildGenerateConfig` (new length +
   defaults from partial/empty settings), `buildBrandContext` (name + tone present /
-  absent), `validateRegenerateInput` (empty prompt rejected, length bounds, valid
-  passes).
+  absent), `validateRegenerateInput` (empty prompt rejected, length bounds 5–180,
+  valid passes).
+- **Unit-agreement assertion:** `buildGenerateConfig({ target_length: 45 }, 60)`
+  yields `targetLengthSeconds === 60` (the new value, in seconds — the same unit the
+  panel renders as `45s` and the new form supplies), confirming no minutes/label
+  drift across the form, the merge, `buildGenerateConfig`, and the panel display.
 - **Manual / app run:** open a video, expand Regenerate, change the length (and/or
   prompt), confirm → old scenes clear and new scenes stream in with a different
   count/pacing; the guard blocks while a render is mid-flight; then synthesize +
@@ -160,3 +220,7 @@ app run (not unit-tested, matching `music-actions.ts` / `render-actions.ts`).
   render time; no per-regenerate snapshot here).
 - Editing the prompt from anywhere other than the regenerate form.
 - Deleting old renders/costs on regenerate (kept as history).
+- **Reaping orphaned R2 audio.** The worker's clear-first best-effort-deletes the
+  prior scenes' `audio/{id}.mp3`, but anything it misses (delete failure, a crash
+  between delete and re-generate) is left orphaned — there is no reaper this slice.
+  Known debt, not a silent leak; a sweep job is a later operations task.
