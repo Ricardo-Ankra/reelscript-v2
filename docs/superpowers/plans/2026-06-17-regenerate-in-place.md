@@ -13,7 +13,7 @@
 - **Script-only.** Regenerate re-runs script generation only; the operator then Synthesizes + Renders via the existing steps. No auto-synth/render.
 - **Destructive wipe lives in the worker**, as the FIRST operations INSIDE the existing `stream-and-insert` `step.run` (NOT a separate `step.run`), guarded by `replace === true`. This guarantees it re-runs on every Inngest retry of that step (Inngest memoizes a step only on success), so a partial stream is always re-wiped before re-streaming. The action performs no destructive op.
 - **`replace: true` is set ONLY by `regenerateVideo`.** `startScriptGeneration` never sets it. The worker logs the scene count before deleting, so an errant wipe is observable.
-- **Concurrency:** a partial unique index on `jobs (video_id) where type='script_generation' and status in ('queued','running')` is the authoritative stop against two concurrent regenerations; the action also does a friendly pre-read and maps Postgres `23505` to the same reason string.
+- **Concurrency:** the partial unique index on `jobs (video_id) where type='script_generation' and status in ('queued','running')` enforces exactly the narrow case it can — two concurrent `script_generation` enqueues (double-click / two tabs) — at the DB; the second insert fails with `23505`. It does NOT cover the cross-type case (regenerate while a `render`/`voice_synthesis` is in flight); that is handled by the action's friendly pre-read + single-operator usage, not the DB. The action maps `23505` to the same reason string as the friendly read.
 - **`target_length` is in SECONDS** end-to-end; regenerate length bounds are **integer 5–180**.
 - **`videos.prompt`** is `text` nullable, no backfill; `startScriptGeneration` is extended to persist it **in this slice**.
 - **Panel:** only `{ ok: true }` collapses the Regenerate form; `{ ok: false, reason }` (friendly pre-check OR `23505`) keeps it open and shows `reason`. Branch solely on `res.ok`.
@@ -48,7 +48,7 @@
 - Produces:
   - `const MIN_TARGET_LENGTH = 5`, `const MAX_TARGET_LENGTH = 180`
   - `buildGenerateConfig(settings: unknown, targetLengthSeconds: number): VideoConfig`
-  - `buildBrandContext(channel: { name?: unknown; brand_voice?: unknown }): BrandContext`
+  - `buildBrandContext(channel: { name: string; brand_voice?: unknown }): BrandContext` — name is REQUIRED (the action guarantees a loaded channel with a string name); no fabricated fallback.
   - `validateRegenerateInput(input: { prompt?: unknown; targetLengthSeconds?: unknown }): { ok: true; value: { prompt: string; targetLengthSeconds: number } } | { ok: false; reason: string }`
 
 - [ ] **Step 1: Write the failing tests**
@@ -100,9 +100,9 @@ test('buildBrandContext: name + tone present', () => {
   });
 });
 
-test('buildBrandContext: missing tone omitted; missing name falls back', () => {
+test('buildBrandContext: missing/blank tone is omitted (name always used as given)', () => {
   assert.deepEqual(buildBrandContext({ name: 'Studio', brand_voice: null }), { channelName: 'Studio' });
-  assert.deepEqual(buildBrandContext({}), { channelName: 'Studio' });
+  assert.deepEqual(buildBrandContext({ name: 'Studio' }), { channelName: 'Studio' });
 });
 
 test('validateRegenerateInput: empty/whitespace prompt rejected', () => {
@@ -154,11 +154,15 @@ export function buildGenerateConfig(settings: unknown, targetLengthSeconds: numb
   };
 }
 
-// Brand context from the video's channel row; falls back to the seed channel name.
-export function buildBrandContext(channel: { name?: unknown; brand_voice?: unknown }): BrandContext {
-  const channelName = typeof channel.name === 'string' && channel.name ? channel.name : 'Studio';
+// Brand context from the video's channel row. The channel + its name are REQUIRED;
+// the action guarantees a loaded channel with a string name before calling, so there
+// is NO fabricated fallback name (a wrong-but-plausible name would silently generate
+// off-brand). Only the tone is optional.
+export function buildBrandContext(channel: { name: string; brand_voice?: unknown }): BrandContext {
   const tone = (channel.brand_voice as { tone?: unknown } | null)?.tone;
-  return typeof tone === 'string' && tone ? { channelName, tone } : { channelName };
+  return typeof tone === 'string' && tone
+    ? { channelName: channel.name, tone }
+    : { channelName: channel.name };
 }
 
 export function validateRegenerateInput(input: {
@@ -229,6 +233,7 @@ create unique index if not exists jobs_one_inflight_generation
 Run: `npm run db:apply -- supabase/migrations/20260617130000_regenerate_in_place.sql`
 Expected: `Recorded migration 20260617130000 ...` + `Applied ...`.
 (If the index creation fails on a pre-existing duplicate in-flight job — unlikely in dev — resolve by failing/cancelling the stale job, then re-apply.)
+**Production note:** `create unique index` (non-`CONCURRENTLY`) takes a brief write lock on `jobs`, a hot table. Fine in dev; for a production apply, run it during low traffic (or switch to `create unique index concurrently` outside a txn). Flagged here so it's a deliberate choice, not a surprise.
 
 - [ ] **Step 3: Commit**
 
@@ -362,8 +367,15 @@ export async function regenerateVideo(
     .select('name, brand_voice')
     .eq('id', video.channel_id as string)
     .maybeSingle();
+  // Channel is REQUIRED — never fabricate a brand name (would generate off-brand
+  // silently). A missing channel/name is a surfaced error, not a default.
+  if (!channel || typeof channel.name !== 'string') return { ok: false, reason: 'channel not found' };
 
   // Persist (non-destructive): prompt + new length. Settings via the atomic RPC.
+  // NOTE: this persists BEFORE the enqueue. If the enqueue then fails with a non-23505
+  // error, the stored prompt/target_length are "ahead" of the still-current old scenes
+  // until the operator retries successfully. Non-destructive and self-correcting on a
+  // successful regenerate — named here so it isn't surprising in testing.
   const { error: promptErr } = await supabase.from('videos').update({ prompt }).eq('id', videoId);
   if (promptErr) return { ok: false, reason: promptErr.message };
   const { error: mergeErr } = await supabase.rpc('merge_video_settings', {
@@ -384,7 +396,7 @@ export async function regenerateVideo(
   }
 
   const config = buildGenerateConfig(video.settings, targetLengthSeconds);
-  const brand = buildBrandContext((channel ?? {}) as { name?: unknown; brand_voice?: unknown });
+  const brand = buildBrandContext(channel as { name: string; brand_voice?: unknown });
 
   await inngest.send({
     name: 'script/generate',
@@ -573,6 +585,10 @@ export function VideoSettingsPanel({
 ```tsx
   const [regenOpen, setRegenOpen] = useState(false);
   const [prompt, setPrompt] = useState(initialPrompt);
+  // settings.target_length is always a number: `settings` is parseVideoSettings(...),
+  // which backfills a numeric default (30) for any missing/invalid value. So the
+  // number input is never seeded undefined → no empty-input edge case, for new and
+  // pre-settings-panel videos alike.
   const [length, setLength] = useState(settings.target_length);
   const [regenBusy, setRegenBusy] = useState(false);
   const [regenError, setRegenError] = useState<string | null>(null);

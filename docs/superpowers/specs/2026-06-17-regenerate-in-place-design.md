@@ -101,8 +101,9 @@ current scenes intact. Steps (RLS-scoped server client throughout):
 2. **Validate input.** `prompt` non-empty (trimmed); `targetLengthSeconds` an
    integer within bounds **5–180** (seconds). Reject otherwise.
 3. **Load context.** Fetch the video (`account_id`, `channel_id`, `settings`) and
-   its channel (name + `brand_voice.tone`). Not found / not owned (RLS) →
-   `{ ok:false, reason }`.
+   its channel (name + `brand_voice.tone`). Video not found / not owned (RLS), OR
+   channel missing / without a string name → `{ ok:false, reason }`. The channel is
+   required — `buildBrandContext` never fabricates a brand name.
 4. **Persist.** Write `videos.prompt = prompt`; merge `target_length` into
    `videos.settings` via the existing `merge_video_settings` RPC. (Not destructive;
    the worker reads neither — they drive the panel display and future regenerates.)
@@ -225,8 +226,11 @@ type/label into the key. A unit-agreement assertion is in the tests below.
 - `buildGenerateConfig(settings: unknown, targetLengthSeconds: number): VideoConfig`
   — rebuilds the config from stored settings with the new length, applying the same
   defaults as `parseVideoSettings`.
-- `buildBrandContext(channel: { name?: unknown; brand_voice?: unknown }): BrandContext`
-  — `{ channelName, tone? }` from the channel row.
+- `buildBrandContext(channel: { name: string; brand_voice?: unknown }): BrandContext`
+  — `{ channelName, tone? }` from the channel row. The channel + a string name are
+  REQUIRED (the action surfaces a missing channel as `{ ok:false }` rather than
+  fabricating one) — no plausible-but-wrong default name that would silently generate
+  off-brand. Only `tone` is optional.
 - `validateRegenerateInput(input): { ok: true; value } | { ok: false; reason }`
   — trims/validates prompt + length bounds.
 
