@@ -71,6 +71,12 @@ Length        30s   [ Regenerate… ]
   generation status via the editor; the server action is the authoritative guard).
 - On success the panel collapses the form; the editor's existing "Generating…"
   pill + Realtime scene stream take over (no extra panel state needed).
+- **Failure keeps the form open.** Only `{ ok: true }` collapses the form. A
+  `{ ok: false, reason }` — whether from the step-1 friendly pre-check OR the DB
+  unique-index violation (`23505`), which both return the identical reason string —
+  re-enables the Regenerate button and shows `reason` inline; it must NOT collapse as
+  if it succeeded. The panel branches solely on `res.ok`, so both failure sources are
+  handled identically by construction.
 
 ## Server action
 
@@ -129,17 +135,47 @@ The destructive `DELETE FROM scenes` is the worker's **first step**, not the act
 
 ### Worker change: clear-first on `replace`
 
-`generate-script.ts` gains a guarded **clear-first** step, run only when the event's
-`replace === true` (initial generation omits it → unchanged behavior):
+`generate-script.ts` today runs three Inngest steps: `mark-running`,
+`stream-and-insert` (one durable `step.run` that streams the NDJSON and upserts every
+scene), `mark-complete`. The guarded **clear-first** is added as the **first
+operations inside the existing `stream-and-insert` step** — NOT a new `step.run` —
+and runs only when the event's `replace === true`:
 
-1. Read existing scene ids for `videoId`; best-effort delete their R2 audio
+1. Read existing scene ids for `videoId`; **log the count about to be cleared**
+   (`[regenerate] clearing N scenes for video <id>`) so an erroneous wipe is visible
+   in the job logs, not silent; best-effort delete their R2 audio
    (`audio/{sceneId}.mp3`) — failures logged, never block.
 2. `DELETE FROM scenes WHERE video_id = …` (shots cascade via FK).
 
-Then it streams the new scenes exactly as today via `upsert_scene_with_shots`. On an
-Inngest retry the clear-first simply re-deletes and the stream re-inserts —
-idempotent. (For initial generation, `replace` is false/absent and this step is
-skipped, so that path is untouched.)
+Then it streams the new scenes exactly as today via `upsert_scene_with_shots`.
+
+**Retry safety — why clear-first must live INSIDE `stream-and-insert`.** Inngest
+memoizes a `step.run` only when it completes successfully. If the stream crashes
+after inserting, say, 3 of 8 scenes, that step never completed → on retry Inngest
+re-runs the whole step from the top → clear-first re-deletes the 3 partial scenes and
+the stream re-inserts cleanly. A partial stream is therefore always wiped before
+re-streaming; there are no duplicates or orphans. This guarantee depends on the step
+boundary: clear-first must be in the SAME `step.run` as the stream. If it were a
+separate `step.run('clear-first')`, a successful clear-first would memoize and a
+retry of the stream alone would skip the re-delete — leaving a mix. So it is
+deliberately not its own step. (`mark-running` memoizes separately and is irrelevant
+to the wipe.)
+
+After `retries` are exhausted the existing `onFailure` marks the job `failed`. Worst
+case is then a video with few/no scenes and a **failed** job — observable and
+recoverable by regenerating again, distinct from the original "scenes gone, no job"
+void this design eliminates.
+
+(For initial generation `replace` is false/absent, so clear-first is skipped and that
+path is byte-for-byte unchanged.)
+
+**`replace` is destructive — keep it coupled to regenerate.** The only emitter that
+sets `replace: true` is `regenerateVideo`; `startScriptGeneration` (the sole other
+emitter of `script/generate`) never sets it. There is no structural lock keeping the
+flag and the destructive intent together, so this is enforced by convention + the
+scene-count log above (an erroneous wipe is at least observable in the job logs). The
+plan calls this out so a future `script/generate` emitter doesn't pass `replace: true`
+without meaning to wipe.
 
 ## What is wiped vs kept
 
