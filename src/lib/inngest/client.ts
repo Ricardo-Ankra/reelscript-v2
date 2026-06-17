@@ -33,6 +33,9 @@ export type ScriptGenerateData = {
   prompt: string;
   config: VideoConfig;
   brand: BrandContext;
+  // When true, the worker WIPES the video's existing scenes before streaming the new
+  // ones (regenerate-in-place). Set ONLY by regenerateVideo; absent for initial gen.
+  replace?: boolean;
 };
 
 // voice/synthesize carries the job to update, the target video + account, the
