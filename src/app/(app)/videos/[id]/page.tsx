@@ -16,7 +16,7 @@ export default async function VideoEditorPage({
 
   const { data: video } = await supabase
     .from('videos')
-    .select('id, title')
+    .select('id, title, settings')
     .eq('id', id)
     .maybeSingle();
   if (!video) notFound();
@@ -76,6 +76,7 @@ export default async function VideoEditorPage({
       title={video.title as string}
       initialScenes={scenes}
       initialStatus={(job?.status as string | null) ?? null}
+      initialSettings={(video.settings as Record<string, unknown>) ?? {}}
     />
   );
 }
