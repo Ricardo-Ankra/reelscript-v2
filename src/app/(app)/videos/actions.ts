@@ -79,6 +79,7 @@ export async function startScriptGeneration(
       account_id: accountId,
       channel_id: channelId,
       title,
+      prompt: trimmed,
       settings: SEED_VIDEO_SETTINGS,
     })
     .select('id')

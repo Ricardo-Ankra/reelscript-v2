@@ -1,6 +1,7 @@
 import { inngest, type ScriptGenerateData } from '../client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { anthropic, SCRIPT_MODEL } from '@/lib/ai/anthropic';
+import { deleteObject } from '@/lib/r2';
 import {
   buildSystemPrompt,
   buildUserPrompt,
@@ -35,7 +36,7 @@ export const generateScript = inngest.createFunction(
     },
   },
   async ({ event, step }) => {
-    const { jobId, videoId, accountId, prompt, config, brand } =
+    const { jobId, videoId, accountId, prompt, config, brand, replace } =
       event.data as ScriptGenerateData;
     const admin = createAdminClient();
 
@@ -50,6 +51,25 @@ export const generateScript = inngest.createFunction(
     // Stream + insert in one durable step. On retry it re-streams; the RPC
     // upserts on natural keys so rows converge rather than duplicate.
     const counts = await step.run('stream-and-insert', async () => {
+      // Clear-first (regenerate-in-place): wipe the video's existing scenes before
+      // streaming new ones. INSIDE this step (not its own step.run) so an Inngest
+      // retry of a partial stream re-deletes the partial scenes first. Guarded by
+      // replace — initial generation skips this entirely.
+      if (replace) {
+        const { data: existing } = await admin.from('scenes').select('id').eq('video_id', videoId);
+        const ids = (existing ?? []).map((r) => r.id as string);
+        console.log(`[regenerate] clearing ${ids.length} scenes for video ${videoId}`);
+        for (const id of ids) {
+          try {
+            await deleteObject(`audio/${id}.mp3`);
+          } catch (e) {
+            console.warn(`[regenerate] audio delete failed for ${id}: ${(e as Error).message}`);
+          }
+        }
+        const { error: delErr } = await admin.from('scenes').delete().eq('video_id', videoId);
+        if (delErr) throw new Error(`clear scenes: ${delErr.message}`);
+      }
+
       let written = 0;
       let skipped = 0;
       const acc = createNdjsonAccumulator();

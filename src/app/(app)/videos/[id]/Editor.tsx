@@ -30,12 +30,14 @@ export function Editor({
   initialScenes,
   initialStatus,
   initialSettings,
+  initialPrompt,
 }: {
   videoId: string;
   title: string;
   initialScenes: SceneWithShots[];
   initialStatus: string | null;
   initialSettings: Record<string, unknown>;
+  initialPrompt: string;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [scenes, setScenes] = useState<SceneWithShots[]>(initialScenes);
@@ -356,7 +358,7 @@ export function Editor({
       )}
 
       {ordered.length > 0 && (
-        <VideoSettingsPanel videoId={videoId} initialSettings={initialSettings} />
+        <VideoSettingsPanel videoId={videoId} initialSettings={initialSettings} initialPrompt={initialPrompt} />
       )}
 
       {ordered.length > 0 && (
