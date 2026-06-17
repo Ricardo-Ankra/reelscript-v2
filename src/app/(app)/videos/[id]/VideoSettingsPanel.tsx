@@ -39,6 +39,7 @@ export function VideoSettingsPanel({
     }
   }
 
+  const busy = saveState === 'saving';
   const rowClass = 'flex items-center justify-between gap-3';
   const ctrlClass =
     'rounded-md border border-black/15 bg-transparent px-2 py-1 text-xs outline-none focus:border-black/30 dark:border-white/20 dark:focus:border-white/30';
@@ -55,6 +56,7 @@ export function VideoSettingsPanel({
         <input
           type="checkbox"
           checked={settings.captions_on}
+          disabled={busy}
           onChange={(e) => save({ captions_on: e.target.checked })}
         />
       </label>
@@ -64,7 +66,7 @@ export function VideoSettingsPanel({
         <select
           className={ctrlClass}
           value={settings.caption_emphasis_density}
-          disabled={!settings.captions_on}
+          disabled={!settings.captions_on || busy}
           onChange={(e) => save({ caption_emphasis_density: e.target.value as VideoSettings['caption_emphasis_density'] })}
         >
           <option value="off">off</option>
@@ -78,6 +80,7 @@ export function VideoSettingsPanel({
         <input
           type="checkbox"
           checked={settings.music_on}
+          disabled={busy}
           onChange={(e) => save({ music_on: e.target.checked })}
         />
       </label>
@@ -87,6 +90,7 @@ export function VideoSettingsPanel({
         <select
           className={ctrlClass}
           value={settings.aspect_ratio}
+          disabled={busy}
           onChange={(e) => save({ aspect_ratio: e.target.value as VideoSettings['aspect_ratio'] })}
         >
           <option value="9:16">9:16</option>
@@ -100,6 +104,7 @@ export function VideoSettingsPanel({
         <select
           className={ctrlClass}
           value={settings.fps}
+          disabled={busy}
           onChange={(e) => save({ fps: Number(e.target.value) as VideoSettings['fps'] })}
         >
           <option value={24}>24</option>
