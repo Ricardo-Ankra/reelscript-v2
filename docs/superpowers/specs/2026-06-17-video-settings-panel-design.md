@@ -60,24 +60,40 @@ Editor.tsx (client) ── mounts <VideoSettingsPanel> in the render area, above
         │ onChange(patch)
         ▼
 updateVideoSettings(videoId, patch)  ── server action (settings-actions.ts)
-        │ merge + validate
+        │ 1. sanitizeSettingsPatch(patch) → validated subset (invalid keys dropped)
+        │ 2. ATOMIC jsonb merge — no app-side read-modify-write
         ▼
-Supabase videos.update({ settings })  ── RLS-scoped server client (Tier 1)
+rpc merge_video_settings(video_id, validatedPatch)
+        │  update videos set settings = settings || p_patch
+        │  where id = p_video_id returning settings        (RLS: SECURITY INVOKER)
+        ▼
+returns the NEW full settings  ──►  { ok: true; settings } back to the panel
 ```
 
 - **`VideoSettingsPanel.tsx`** (client): renders the controls from the initial
   settings; on each control change it optimistically updates local state, calls the
   server action, and shows a small `saving… / saved ✓ / save failed` indicator
-  (the `SceneCard` save-state pattern). A static line — "Settings apply on the next
-  render." — sets expectations; the panel never auto-renders.
-- **`settings-actions.ts`**: `updateVideoSettings(videoId, patch)` loads the video,
-  merges the patch into `settings`, writes it, and returns
-  `{ ok: true } | { ok: false; reason: string }`. RLS via the server Supabase
-  client (no manual auth checks), matching `music-actions.ts`.
-- **Pure core** (`src/lib/videos/settings.ts`): `mergeVideoSettings(current, patch)`
-  — validates each key (enum/bounds), drops invalid keys rather than writing them,
-  and returns the merged settings object. Unit-tested; the server action is a thin
-  wrapper around it + the Supabase write.
+  (the `SceneCard` save-state pattern). On `{ ok: true; settings }` it **reconciles
+  local state to the returned `settings`** — it does not assume its patch took, so a
+  value the server normalised or dropped shows the truth. On `{ ok: false }` it
+  reverts to the last-saved settings and shows `save failed`. A static line —
+  "Settings apply on the next render." — sets expectations; the panel never
+  auto-renders.
+- **`settings-actions.ts`**: `updateVideoSettings(videoId, patch)` = sanitize the
+  patch → call the atomic-merge RPC → return `{ ok: true; settings } | { ok: false;
+  reason: string }`. No load-then-write in app code, so two rapid toggles cannot
+  lose each other to a stale read (the merge is one Postgres statement; last write
+  wins per key, not per whole object).
+- **Pure core** (`src/lib/videos/settings.ts`): `sanitizeSettingsPatch(patch)` —
+  validates/normalises each key (enum/bounds/type), keeps only known keys with
+  allowed values, drops the rest. Unit-tested. The server action is a thin wrapper
+  around it + the RPC call.
+- **Migration**: a `merge_video_settings(p_video_id uuid, p_patch jsonb) returns
+  jsonb` SQL function — `SECURITY INVOKER` so the caller's RLS on `videos` applies —
+  doing the atomic `settings = settings || p_patch ... returning settings`. The
+  validated patch is passed as `jsonb`; Postgres `||` shallow-merges it over the
+  stored object, so unrelated keys (`mood`, `music_params`, `target_length`, …) are
+  preserved untouched.
 
 ## Settings shape
 
@@ -85,41 +101,59 @@ Supabase videos.update({ settings })  ── RLS-scoped server client (Tier 1)
 // src/lib/videos/settings.ts (pure)
 export type CaptionEmphasisDensity = 'off' | 'sparing' | 'liberal';
 export type AspectRatio = '9:16' | '1:1' | '16:9';
+export type Fps = 24 | 30; // literal union — same compile-time guarantee as the enums
 
 export interface VideoSettingsPatch {
   captions_on?: boolean;
   caption_emphasis_density?: CaptionEmphasisDensity;
   music_on?: boolean;
   aspect_ratio?: AspectRatio;
-  fps?: number; // 24 | 30
+  fps?: Fps;
   // target_length intentionally not patchable in this slice
 }
 
-// Merge a validated patch into the stored settings JSON. Unknown/invalid values
-// in the patch are ignored (never written); other existing keys are preserved.
-export function mergeVideoSettings(
-  current: Record<string, unknown>,
-  patch: VideoSettingsPatch,
-): Record<string, unknown>;
+// Validate + normalise a patch from the UI: keep only known keys whose values are
+// in the allowed set; drop the rest (defensive — the UI only sends valid values).
+// The atomic merge (settings || patch, in the merge_video_settings RPC) applies the
+// returned subset, so dropped keys are simply never written.
+export function sanitizeSettingsPatch(patch: unknown): VideoSettingsPatch;
 ```
 
 Allowed sets: `caption_emphasis_density ∈ {off,sparing,liberal}`, `aspect_ratio ∈
-{9:16,1:1,16:9}`, `fps ∈ {24,30}`, booleans coerced from booleans only.
+{9:16,1:1,16:9}`, `fps ∈ {24,30}`, booleans accepted from booleans only.
+
+**Why `fps ∈ {24, 30}`:** 24 fps (a cinematic cadence) and 30 fps (standard for
+short-form social) are the two the render path + Lambda are exercised with. More can
+be added later behind the same literal union; the renderer already reads `fps` from
+settings, so adding a value is a one-line change here.
 
 ## Error handling
 
-- Invalid patch values are dropped by `mergeVideoSettings` (defensive; the UI only
-  ever sends valid values). The action never throws on a bad enum — it writes the
-  valid subset.
-- A Supabase write failure returns `{ ok: false, reason }`; the panel shows
-  `save failed` inline and reverts the optimistic change to the last-saved value.
-- No video found / not owned (RLS) → `{ ok: false, reason }`, surfaced inline.
+- The action returns the **actually-written settings** (`{ ok: true; settings }`),
+  and the panel reconciles its local state to them. So if the server normalises or
+  drops a value, the panel reflects the truth instead of showing a value as "saved"
+  that was never written — closing the gap where a silently-dropped key would read
+  as success.
+- Invalid patch values are dropped by `sanitizeSettingsPatch` (defensive; the UI only
+  sends valid values). A dropped key is simply absent from the merge and therefore
+  unchanged in the returned settings.
+- An RPC / write failure, or video-not-found / not-owned (RLS), returns
+  `{ ok: false, reason }`; the panel reverts the optimistic change to the last-saved
+  settings and shows `save failed` inline.
 
 ## Testing
 
-- **Pure (`node --test`)** on `mergeVideoSettings`: a valid patch merges; an invalid
-  enum/fps is dropped (not written); a partial patch preserves unrelated keys
-  (e.g. `mood`, `music_params`); booleans only accept booleans.
+- **Pure (`node --test`)** on `sanitizeSettingsPatch`: a valid patch passes through
+  (normalised); an invalid enum / fps / non-boolean is dropped; unknown keys are
+  dropped; a partial patch returns only its own keys (so the atomic `||` leaves
+  everything else — `mood`, `music_params`, `target_length` — untouched).
+- **Emphasis-density round-trip (item 4, explicit intended behavior):** turning
+  captions off must NOT clear a stored `caption_emphasis_density`. Asserted by
+  `sanitizeSettingsPatch({ captions_on: false })` returning a patch with **no**
+  `caption_emphasis_density` key — so the merge can't overwrite it, and
+  liberal → captions off → captions on restores liberal. The UI only disables the
+  density control while captions are off; it never sends a density change for the
+  toggle, and the stored value persists.
 - **Manual / app run**: toggle captions and emphasis density in the panel, confirm
   the saved indicator, re-render, and confirm the output reflects the change — this
   also exercises the `caption_emphasis_density` control end-to-end through the UI for
@@ -134,3 +168,9 @@ Allowed sets: `caption_emphasis_density ∈ {off,sparing,liberal}`, `aspect_rati
 - Channel-level defaults UI (a later Phase-8 slice — channel settings).
 - Realtime reflection of settings across sessions (single-operator; optimistic
   local state is sufficient).
+
+**`target_length` honesty (item 5):** confirmed `target_length` is written by no
+code path in the interim — it is only seeded at video creation
+(`SEED_VIDEO_SETTINGS`) and never updated until the regenerate slice lands. So the
+read-only display always matches the value that shaped the current scenes; it cannot
+drift. The next slice introduces the only writer, paired with the regenerate action.
