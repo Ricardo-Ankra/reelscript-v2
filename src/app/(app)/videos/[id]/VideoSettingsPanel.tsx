@@ -40,12 +40,17 @@ export function VideoSettingsPanel({
   async function regenerate() {
     setRegenBusy(true);
     setRegenError(null);
-    const res = await regenerateVideo(videoId, { prompt: prompt.trim(), targetLengthSeconds: Number(length) });
-    setRegenBusy(false);
-    if (res.ok) {
-      setRegenOpen(false); // success: collapse; the editor's Realtime + status pill take over
-    } else {
-      setRegenError(res.reason); // failure (pre-check OR 23505): keep open, show why
+    try {
+      const res = await regenerateVideo(videoId, { prompt: prompt.trim(), targetLengthSeconds: Number(length) });
+      if (res.ok) {
+        setRegenOpen(false); // success: collapse; the editor's Realtime + status pill take over
+      } else {
+        setRegenError(res.reason); // failure (pre-check OR 23505): keep open, show why
+      }
+    } catch {
+      setRegenError('Something went wrong. Please try again.');
+    } finally {
+      setRegenBusy(false);
     }
   }
 
@@ -180,7 +185,7 @@ export function VideoSettingsPanel({
             <button type="button" className={ctrlClass} disabled={regenBusy} onClick={() => setRegenOpen(false)}>
               Cancel
             </button>
-            <button type="button" className={ctrlClass} disabled={regenBusy} onClick={() => regenerate()}>
+            <button type="button" className={ctrlClass} disabled={regenBusy} onClick={regenerate}>
               {regenBusy ? 'Regenerating…' : 'Regenerate'}
             </button>
           </div>
