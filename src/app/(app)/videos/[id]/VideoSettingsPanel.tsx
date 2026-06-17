@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { updateVideoSettings } from './settings-actions';
+import { regenerateVideo } from './regenerate-actions';
 import {
   parseVideoSettings,
   type VideoSettings,
@@ -13,17 +14,40 @@ const saveLabel: Record<SaveState, string> = { idle: '', saving: 'saving…', sa
 
 // Per-video render settings (Phase 8). Autosaves each control to video.settings via
 // the atomic merge action, then reconciles to the returned settings. Changes apply on
-// the next render — the panel never auto-renders. target_length is read-only here
-// (regenerate-in-place is the next slice).
+// the next render — the panel never auto-renders.
 export function VideoSettingsPanel({
   videoId,
   initialSettings,
+  initialPrompt,
 }: {
   videoId: string;
   initialSettings: Record<string, unknown>;
+  initialPrompt: string;
 }) {
   const [settings, setSettings] = useState<VideoSettings>(() => parseVideoSettings(initialSettings));
   const [saveState, setSaveState] = useState<SaveState>('idle');
+
+  const [regenOpen, setRegenOpen] = useState(false);
+  const [prompt, setPrompt] = useState(initialPrompt);
+  // settings.target_length is always a number: `settings` is parseVideoSettings(...),
+  // which backfills a numeric default (30) for any missing/invalid value. So the
+  // number input is never seeded undefined → no empty-input edge case, for new and
+  // pre-settings-panel videos alike.
+  const [length, setLength] = useState(settings.target_length);
+  const [regenBusy, setRegenBusy] = useState(false);
+  const [regenError, setRegenError] = useState<string | null>(null);
+
+  async function regenerate() {
+    setRegenBusy(true);
+    setRegenError(null);
+    const res = await regenerateVideo(videoId, { prompt: prompt.trim(), targetLengthSeconds: Number(length) });
+    setRegenBusy(false);
+    if (res.ok) {
+      setRegenOpen(false); // success: collapse; the editor's Realtime + status pill take over
+    } else {
+      setRegenError(res.reason); // failure (pre-check OR 23505): keep open, show why
+    }
+  }
 
   async function save(patch: VideoSettingsPatch) {
     const prev = settings;
@@ -114,8 +138,54 @@ export function VideoSettingsPanel({
 
       <div className={rowClass}>
         <span className="opacity-80">Length</span>
-        <span className="opacity-60">{settings.target_length}s · regenerates — coming next</span>
+        <span className="flex items-center gap-2">
+          <span className="opacity-60">{settings.target_length}s</span>
+          <button
+            type="button"
+            className={ctrlClass}
+            disabled={busy}
+            onClick={() => setRegenOpen((o) => !o)}
+          >
+            Regenerate…
+          </button>
+        </span>
       </div>
+
+      {regenOpen && (
+        <div className="space-y-2 rounded-md border border-black/15 p-2 dark:border-white/20">
+          <div className="font-medium opacity-80">Regenerate video</div>
+          <textarea
+            className="w-full resize-y rounded-md border border-black/15 bg-transparent p-2 outline-none focus:border-black/30 dark:border-white/20 dark:focus:border-white/30"
+            rows={3}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Describe the video…"
+            disabled={regenBusy}
+          />
+          <label className={rowClass}>
+            <span className="opacity-80">Length (s)</span>
+            <input
+              type="number"
+              min={5}
+              max={180}
+              className={ctrlClass}
+              value={length}
+              disabled={regenBusy}
+              onChange={(e) => setLength(Number(e.target.value))}
+            />
+          </label>
+          <p className="text-amber-600">⚠ Replaces the current scenes &amp; audio.</p>
+          {regenError && <p className="text-red-600">{regenError}</p>}
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" className={ctrlClass} disabled={regenBusy} onClick={() => setRegenOpen(false)}>
+              Cancel
+            </button>
+            <button type="button" className={ctrlClass} disabled={regenBusy} onClick={() => regenerate()}>
+              {regenBusy ? 'Regenerating…' : 'Regenerate'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <p className="opacity-50">Settings apply on the next render.</p>
     </div>
