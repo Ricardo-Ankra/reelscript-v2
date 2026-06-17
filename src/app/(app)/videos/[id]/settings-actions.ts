@@ -15,7 +15,8 @@ export async function updateVideoSettings(
 
   // Nothing valid to write → return current settings unchanged (still honest).
   if (Object.keys(clean).length === 0) {
-    const { data } = await supabase.from('videos').select('settings').eq('id', videoId).maybeSingle();
+    const { data, error } = await supabase.from('videos').select('settings').eq('id', videoId).maybeSingle();
+    if (error) return { ok: false, reason: error.message };
     if (!data) return { ok: false, reason: 'video not found' };
     return { ok: true, settings: (data.settings as Record<string, unknown>) ?? {} };
   }

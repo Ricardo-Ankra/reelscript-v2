@@ -40,7 +40,7 @@ const FPSES: readonly Fps[] = [24, 30];
 // Keep only known keys whose values are in the allowed set; drop everything else.
 export function sanitizeSettingsPatch(patch: unknown): VideoSettingsPatch {
   const out: VideoSettingsPatch = {};
-  if (!patch || typeof patch !== 'object') return out;
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return out;
   const p = patch as Record<string, unknown>;
   if (typeof p.captions_on === 'boolean') out.captions_on = p.captions_on;
   if (typeof p.music_on === 'boolean') out.music_on = p.music_on;

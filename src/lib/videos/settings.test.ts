@@ -58,3 +58,14 @@ test('parseVideoSettings: partial raw merges over defaults; invalid values fall 
   assert.equal(s.target_length, 45);
   assert.equal(s.caption_emphasis_density, SETTINGS_DEFAULTS.caption_emphasis_density);
 });
+
+test('sanitizeSettingsPatch: array input → empty patch', () => {
+  assert.deepEqual(sanitizeSettingsPatch([]), {});
+});
+
+test('parseVideoSettings: invalid target_length (≤0) falls back to default', () => {
+  const s1 = parseVideoSettings({ target_length: 0 });
+  assert.equal(s1.target_length, SETTINGS_DEFAULTS.target_length);
+  const s2 = parseVideoSettings({ target_length: -5 });
+  assert.equal(s2.target_length, SETTINGS_DEFAULTS.target_length);
+});
