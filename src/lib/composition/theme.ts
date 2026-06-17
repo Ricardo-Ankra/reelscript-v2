@@ -18,6 +18,8 @@ export const DEFAULT_THEME: Theme = {
     secondary: '#1E3A8A',
     accent: '#F59E0B',
     bodyText: '#E2E8F0',
+    positive: '#22C55E',
+    negative: '#EF4444',
   },
   fonts: { display: 'Poppins', body: 'Poppins', mono: 'monospace' },
   logos: {},

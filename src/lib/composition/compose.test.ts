@@ -9,7 +9,6 @@ import {
   runAgenticComposition,
   buildStockToolResult,
   collectReferencedAssetIds,
-  collectKineticSpans,
   planStockResolution,
   SEARCH_STOCK_TOOL,
   type CompositionBrief,
@@ -21,7 +20,7 @@ import type { Theme } from '../primitives/contract.ts';
 import type { StockCandidate } from '../assets/candidate.ts';
 
 const theme: Theme = {
-  colors: { background: '#000', foreground: '#fff', primary: '#00f', secondary: '#003', accent: '#fa0', bodyText: '#eee' },
+  colors: { background: '#000', foreground: '#fff', primary: '#00f', secondary: '#003', accent: '#fa0', bodyText: '#eee', positive: '#0f0', negative: '#f00' },
   fonts: { display: 'Poppins', body: 'Poppins', mono: 'monospace' },
   logos: {},
   motion: 'standard',
@@ -311,51 +310,31 @@ test('runAgenticComposition: an unknown tool call is rejected, loop continues', 
   assert.equal(block.is_error, true);
 });
 
-// --- Phase 6: kinetic text prompt binding + span collection -----------------
+// --- caption emphasis revision: KineticText is deprecated, not offered ---------
 
-test('system prompt forbids KineticText when kinetic is disabled', () => {
-  const sys = buildCompositionSystemPrompt(undefined, { kinetic: { enabled: false, usage: 'sparing' } });
-  assert.ok(/do not use the kinetictext/i.test(sys));
+test('system prompt does not offer the deprecated KineticText primitive', () => {
+  const sys = buildCompositionSystemPrompt();
+  assert.ok(!sys.includes('KineticText'), 'KineticText (all props deprecated) is not listed');
+  // the still-active starters remain offered
+  assert.ok(sys.includes('Text') && sys.includes('Image'));
 });
 
-test('system prompt guides frame-aligned bounce|pop emphasis when kinetic is enabled', () => {
-  const sys = buildCompositionSystemPrompt(undefined, { kinetic: { enabled: true, usage: 'sparing' } });
-  assert.ok(/kinetic text/i.test(sys));
-  assert.ok(sys.includes('bounce') && sys.includes('pop'));
-  assert.ok(/sparingly/i.test(sys));
-  assert.ok(/lower third is reserved for captions/i.test(sys));
+// --- per-scene caption focus -----------------------------------------------
+
+test('system prompt explains per-scene caption focus', () => {
+  const sys = buildCompositionSystemPrompt();
+  assert.ok(/captionFocus/.test(sys));
+  assert.ok(/visual/.test(sys) && /balanced/.test(sys) && /text/.test(sys));
 });
 
-test('user prompt lists spoken-word frame windows only when kinetic is enabled', () => {
-  const kBrief: CompositionBrief = {
-    ...brief,
-    kinetic: { enabled: true, usage: 'sparing' },
-    scenes: [{ ...brief.scenes[0], words: [{ t: 'Hello', s: 0, e: 12 }, { t: 'there', s: 12, e: 24 }] }, brief.scenes[1]],
-  };
-  const u = buildCompositionUserPrompt(kBrief);
-  assert.ok(u.includes('Hello@0-12'));
-  // disabled => no word windows
-  assert.ok(!buildCompositionUserPrompt(brief).includes('@0-12'));
+test('parseComposition keeps a valid captionFocus and drops an invalid one', () => {
+  const ok = parseComposition('{"scenes":[{"sceneId":"s1","captionFocus":"visual","instances":[]}]}');
+  assert.equal(ok?.scenes[0].captionFocus, 'visual');
+  const bad = parseComposition('{"scenes":[{"sceneId":"s1","captionFocus":"huge","instances":[]}]}');
+  assert.equal(bad?.scenes[0].captionFocus, undefined);
 });
 
-test('collectKineticSpans: absolute frame windows across scene offsets', () => {
-  const spec = assembleSpec(
-    {
-      scenes: [
-        { sceneId: 'scene-1', instances: [{ primitive: 'KineticText', props: { text: 'Hi' }, layer: 2, startFrame: 10, durationInFrames: 20 }] },
-        { sceneId: 'scene-2', instances: [{ primitive: 'KineticText', props: { text: 'Bye' }, layer: 2, startFrame: 5, durationInFrames: 15 }] },
-      ],
-    },
-    brief,
-  );
-  // scene-1 offset 0 → [10,30); scene-2 offset 90 → [95,110)
-  assert.deepEqual(collectKineticSpans(spec), [
-    { fromFrame: 10, toFrame: 30 },
-    { fromFrame: 95, toFrame: 110 },
-  ]);
-});
-
-test('collectKineticSpans: no KineticText → no spans', () => {
-  const spec = assembleSpec({ scenes: [{ sceneId: 'scene-1', instances: [{ primitive: 'Text', props: { text: 'x' }, layer: 1, startFrame: 0, durationInFrames: 10 }] }] }, brief);
-  assert.deepEqual(collectKineticSpans(spec), []);
+test('assembleSpec carries captionFocus onto the scene', () => {
+  const spec = assembleSpec({ scenes: [{ sceneId: 'scene-1', captionFocus: 'text', instances: [] }] }, brief);
+  assert.equal(spec.scenes[0].captionFocus, 'text');
 });

@@ -32,6 +32,8 @@ export interface Theme {
     secondary: string;
     accent: string;
     bodyText: string;
+    positive: string; // sentiment token — caption emphasis tone 'positive' (default green)
+    negative: string; // sentiment token — caption emphasis tone 'negative' (default red)
   };
   fonts: {
     display: string; // font family name, already registered before first frame

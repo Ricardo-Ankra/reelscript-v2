@@ -76,6 +76,32 @@ export function buildBrandQaPrompt(stressName: string): string {
   ].join('\n');
 }
 
+// Effect brand QA (caption emphasis revision, 2026-06-16) — the brand gate's
+// rubric for a caption ANIMATION effect. Same gate + verdict shape as a primitive,
+// but the artifact differs: the still is one frame mid-entrance, so transient
+// scale/rotation/skew/partial-fade/SPLIT-INTO-OFFSET-PIECES are intentional motion,
+// not defects. Judges only in-frame + legible + actually-rendered.
+export function buildEffectBrandQaPrompt(stressName: string): string {
+  return [
+    'You QA a single FRAME from a short word\'s ENTRANCE ANIMATION, rendered against an',
+    `intentionally EXTREME brand kit ("${stressName}"). Because this is mid-animation, the`,
+    'word may be scaled, rotated, skewed, partially faded, or SPLIT INTO OFFSET PIECES.',
+    'Those are INTENTIONAL motion — NOT defects. Do NOT fail the frame for looking',
+    'duplicated, offset, split, tilted, or partially transparent.',
+    '',
+    'Fail the frame ONLY if any of these are true:',
+    '- The word (or its animating pieces) is clipped by or runs past the frame edges.',
+    '- It is unreadable against its background (clashing / low-contrast colours).',
+    '- Nothing recognisable rendered (blank or wholly broken).',
+    'A word shown as two offset halves, or scaled/rotated, PASSES as long as it stays',
+    'inside the frame and is legible. Extreme but readable colours/fonts are intended.',
+    '',
+    'Output ONLY a JSON object, no prose, no markdown fences:',
+    '{"pass": true|false, "issues": ["short reason", ...]}',
+    '(leave issues empty when pass is true)',
+  ].join('\n');
+}
+
 // Parse the vision verdict, tolerating accidental ```json fences. Returns null on
 // malformed JSON or a missing boolean `pass`.
 export function parseGate2Verdict(text: string): Gate2Verdict | null {

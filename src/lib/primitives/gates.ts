@@ -30,13 +30,20 @@ export interface GatesOutcome {
 
 // A neutral brand kit to render the gate against (the brand stress kit is step 2).
 const DEFAULT_GATE_THEME: Theme = {
-  colors: { background: '#0B1F3A', foreground: '#FFFFFF', primary: '#3B82F6', secondary: '#1E3A8A', accent: '#F59E0B', bodyText: '#E2E8F0' },
+  colors: { background: '#0B1F3A', foreground: '#FFFFFF', primary: '#3B82F6', secondary: '#1E3A8A', accent: '#F59E0B', bodyText: '#E2E8F0', positive: '#22C55E', negative: '#EF4444' },
   fonts: { display: 'Poppins', body: 'Poppins', mono: 'monospace' },
   logos: {},
   motion: 'standard',
 };
 
-export async function runGates(input: { code: string; propSchema: PropSchema; theme?: Theme }): Promise<GatesOutcome> {
+export async function runGates(input: {
+  code: string;
+  propSchema: PropSchema;
+  theme?: Theme;
+  // The brand-gate QA rubric. Defaults to the primitive prompt; the caption-effect
+  // seeder passes an animation-aware variant (transient split/scale is intentional).
+  brandPrompt?: (stressName: string) => string;
+}): Promise<GatesOutcome> {
   const gates: GateResult[] = [];
 
   // 1. Lint — static AST (server, safe). The security boundary; stop here on failure.
@@ -78,7 +85,7 @@ export async function runGates(input: { code: string; propSchema: PropSchema; th
     // overflowing text + vision-check each for overflow/clipping/clash (spec 9.6).
     let brand: { result: GateResult; frameUrl?: string };
     try {
-      brand = await runBrandGate(site.serveUrl, input.propSchema);
+      brand = await runBrandGate(site.serveUrl, input.propSchema, input.brandPrompt ?? buildBrandQaPrompt);
     } catch (e) {
       gates.push({ gate: 'brand', passed: false, reason: `Render error under the stress kit: ${(e as Error).message.slice(0, 500)}` });
       return { passed: false, gates, frameUrl: still.frameUrl };
@@ -92,14 +99,18 @@ export async function runGates(input: { code: string; propSchema: PropSchema; th
 
 // Render the candidate against each stress theme (same bundle, override inputProps) and
 // vision-QA the frame. First failure short-circuits with its frame + reason.
-async function runBrandGate(serveUrl: string, schema: PropSchema): Promise<{ result: GateResult; frameUrl?: string }> {
+async function runBrandGate(
+  serveUrl: string,
+  schema: PropSchema,
+  brandPrompt: (stressName: string) => string,
+): Promise<{ result: GateResult; frameUrl?: string }> {
   const props = stressProps(schema);
   for (const { name, theme } of STRESS_THEMES) {
     const still = await renderGateStill(serveUrl, { props, theme });
     if (still.blank) {
       return { result: { gate: 'brand', passed: false, reason: `Blank under the "${name}" stress kit.` }, frameUrl: still.frameUrl };
     }
-    const verdict = await visionQa(still.frameUrl, buildBrandQaPrompt(name));
+    const verdict = await visionQa(still.frameUrl, brandPrompt(name));
     if (verdict && !verdict.pass) {
       return {
         result: { gate: 'brand', passed: false, reason: `Failed the "${name}" stress kit: ${verdict.issues.join('; ') || 'overflow/clipping'}` },

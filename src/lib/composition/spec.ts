@@ -14,7 +14,9 @@
 // Relative import (not the @/ alias) so the Remotion bundler, which compiles the
 // remotion/ entry, can resolve this module without extra webpack alias config.
 import type { Theme, PrimitiveInstance } from '../primitives/contract';
-import type { CaptionSegment, CaptionStyle } from '../captions/segments';
+import type { CaptionStyle } from '../captions/segments';
+import type { CaptionChunk, CaptionFocus } from '../captions/types';
+import type { CaptionEmphasisConfig } from '../captions/emphasis-style';
 
 export interface CompositionMetadata {
   width: number;
@@ -37,6 +39,9 @@ export interface CompositionScene {
   durationInFrames: number;
   /** Voiceover for this scene; references a manifest asset. Omitted = silent scene. */
   voiceover?: { assetId: string };
+  /** Per-scene caption focus (AI-emitted): drives the caption band + size for this
+   *  scene's captions. Omitted ⇒ 'balanced'. */
+  captionFocus?: CaptionFocus;
   instances: PrimitiveInstance[];
 }
 
@@ -49,13 +54,17 @@ export interface CompositionSpec {
   assets: AssetManifestEntry[];
   scenes: CompositionScene[];
   /**
-   * Burnt-in caption track (Phase 6, spec 4.2.1 / 8.5). SYSTEM-built from the word
-   * timings, NOT authored by the composition AI — and already suppressed during
-   * kinetic spans (the burnt track only; SRT/VTT sidecars keep the full narration).
-   * Absent/empty = captions off for this render. Music is deliberately NOT in the
-   * spec: the Remotion render is voiceover-only; the ffmpeg re-mux owns music (10.1).
+   * Burnt-in animated caption track (caption emphasis revision, 2026-06-16).
+   * SYSTEM-built from the word timings (one tokenizer → chunkWords) with per-word
+   * emphasis from the Haiku pass; NOT authored by the composition AI. The single
+   * text layer — there is no separate kinetic track. Absent/empty = captions off.
+   * Music is deliberately NOT in the spec: the render is voiceover-only; the ffmpeg
+   * re-mux owns music (10.1).
    */
-  captions?: CaptionSegment[];
+  captions?: CaptionChunk[];
   /** Baked caption style (position/size/legibility) from brand_kit.caption_style. */
   captionStyle?: CaptionStyle;
+  /** Baked emphasis brand tables (role typography + tone colour) from
+   *  brand_kit.caption_emphasis. Absent ⇒ the renderer uses the defaults. */
+  captionEmphasis?: CaptionEmphasisConfig;
 }

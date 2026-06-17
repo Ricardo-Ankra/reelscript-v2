@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   frameLooksBlank,
   buildGate2QaPrompt,
+  buildEffectBrandQaPrompt,
   parseGate2Verdict,
   buildResourceTagPrompt,
   parseResourceTag,
@@ -22,6 +23,15 @@ test('buildGate2QaPrompt: carries the intent and the JSON output shape', () => {
   assert.ok(p.includes('a sunrise over mountains'));
   assert.ok(p.includes('"pass"'));
   assert.ok(/only a json object/i.test(p));
+});
+
+test('buildEffectBrandQaPrompt: frames it as mid-animation and treats split/offset as intentional', () => {
+  const p = buildEffectBrandQaPrompt('very-light');
+  assert.ok(p.includes('very-light'), 'names the stress kit');
+  assert.ok(/animation/i.test(p), 'frames it as one frame of an animation');
+  assert.ok(/split|offset|duplicat/i.test(p), 'says split/offset pieces are intentional, not defects');
+  assert.ok(/clip|edge|frame/i.test(p), 'still fails on out-of-frame clipping');
+  assert.ok(p.includes('"pass"') && /only a json object/i.test(p), 'same verdict shape');
 });
 
 test('parseGate2Verdict: a clean pass', () => {
