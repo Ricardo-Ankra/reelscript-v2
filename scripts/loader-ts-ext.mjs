@@ -3,7 +3,18 @@
 // to their .ts/.tsx file when running tests under --experimental-strip-types, which
 // otherwise does no extension resolution. Source stays extensionless (the bundler +
 // tsc resolve it via moduleResolution:'bundler'); only the test runner needs this.
+//
+// Also intercepts 'server-only' to allow test imports (tests are not runtime client code).
 export async function resolve(specifier, context, nextResolve) {
+  // Allow server-only to be imported in tests by returning a dummy module
+  if (specifier === 'server-only') {
+    return {
+      url: 'node:fs', // use a known module that exists and is safe
+      format: 'builtin',
+      shortCircuit: true,
+    };
+  }
+
   const relative = specifier.startsWith('./') || specifier.startsWith('../');
   const hasKnownExt = /\.(m|c)?(j|t)sx?$|\.json$/.test(specifier);
   if (relative && !hasKnownExt) {
