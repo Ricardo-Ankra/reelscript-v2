@@ -2,7 +2,8 @@ import 'server-only';
 import { randomUUID, createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { signedPutUrl, signedGetUrl } from '../r2';
-import { anthropic, COMPOSITION_MODEL } from '../ai/anthropic';
+import { anthropic } from '../ai/anthropic';
+import { loadModelRouting } from '../ai/model-routing.server';
 import { buildResourceTagPrompt, parseResourceTag } from '../ai/vision';
 
 // Channel-resource upload (spec 4.3 / 13.5), server capability. Two steps so bytes go
@@ -81,12 +82,14 @@ export async function confirmResourceUpload(
   const bytes = Buffer.from(await res.arrayBuffer());
   const contentHash = createHash('sha256').update(bytes).digest('hex');
 
+  const models = await loadModelRouting(client, accountId);
+
   let description = (row.original_filename as string) ?? '';
   let tags: string[] = [];
 
   if (row.kind === 'image') {
     const msg = await anthropic().messages.create({
-      model: COMPOSITION_MODEL,
+      model: models.video_composition,
       max_tokens: 512,
       messages: [
         {
