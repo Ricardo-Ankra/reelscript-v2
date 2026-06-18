@@ -5,6 +5,8 @@ import { parseChannelBrand } from '@/lib/channels/brand';
 import { parseCaptionEmphasis, defaultToneColors } from '@/lib/channels/caption-emphasis';
 import { parseVoiceTts } from '@/lib/channels/voice';
 import { VoiceEditor } from './VoiceEditor';
+import { parseVideoDefaults } from '@/lib/channels/video-defaults';
+import { VideoDefaultsEditor } from './VideoDefaultsEditor';
 import { bakeTheme } from '@/lib/composition/theme';
 import { BrandEditor } from './BrandEditor';
 import { CaptionEmphasisEditor } from './CaptionEmphasisEditor';
@@ -47,6 +49,7 @@ export default async function ChannelDetailPage({
   }
 
   const voiceInitial = parseVoiceTts(channel.voice_tts);
+  const videoDefaultsInitial = parseVideoDefaults(channel.defaults);
 
   return (
     <div className="space-y-8">
@@ -77,6 +80,10 @@ export default async function ChannelDetailPage({
       <hr className="border-black/10 dark:border-white/10" />
 
       <VoiceEditor channelId={channel.id as string} initial={voiceInitial} />
+
+      <hr className="border-black/10 dark:border-white/10" />
+
+      <VideoDefaultsEditor channelId={channel.id as string} initial={videoDefaultsInitial} />
     </div>
   );
 }
