@@ -7,16 +7,7 @@ import {
   type VideoConfig,
   type BrandContext,
 } from '@/lib/ai/script-generation';
-
-// video.settings is the single source of truth for config; the same values are
-// copied into the generation event so the worker need not re-read the row.
-const SEED_VIDEO_SETTINGS = {
-  aspect_ratio: DEFAULT_VIDEO_CONFIG.aspectRatio,
-  target_length: DEFAULT_VIDEO_CONFIG.targetLengthSeconds,
-  fps: DEFAULT_VIDEO_CONFIG.fps,
-  captions_on: DEFAULT_VIDEO_CONFIG.captions,
-  music_on: DEFAULT_VIDEO_CONFIG.music,
-};
+import { parseVideoDefaults } from '@/lib/channels/video-defaults';
 
 // Prompt + chosen channel → new video → generation job. Returns the video id so
 // the caller can open the editor, where scenes stream in over Realtime. The
@@ -49,11 +40,22 @@ export async function startScriptGeneration(
   // covers both not-found and not-owned.
   const { data: channel } = await supabase
     .from('channels')
-    .select('id, name, brand_voice')
+    .select('id, name, brand_voice, defaults')
     .eq('id', channelId)
     .maybeSingle();
   if (!channel) throw new Error('Channel not found.');
   const tone = (channel.brand_voice as { tone?: string } | null)?.tone;
+
+  // Snapshot the channel's video-format defaults into the new video; captions/music
+  // stay on code defaults (channel inheritance for those is out of scope here).
+  const fmt = parseVideoDefaults(channel.defaults);
+  const seedSettings = {
+    aspect_ratio: fmt.aspectRatio,
+    target_length: fmt.targetLength,
+    fps: fmt.fps,
+    captions_on: DEFAULT_VIDEO_CONFIG.captions,
+    music_on: DEFAULT_VIDEO_CONFIG.music,
+  };
 
   // Create the video with config baked into settings (written once).
   const title = trimmed.length > 80 ? `${trimmed.slice(0, 77)}…` : trimmed;
@@ -64,7 +66,7 @@ export async function startScriptGeneration(
       channel_id: channel.id as string,
       title,
       prompt: trimmed,
-      settings: SEED_VIDEO_SETTINGS,
+      settings: seedSettings,
     })
     .select('id')
     .single();
@@ -90,11 +92,11 @@ export async function startScriptGeneration(
   const jobId = createdJob.data.id as string;
 
   const config: VideoConfig = {
-    aspectRatio: SEED_VIDEO_SETTINGS.aspect_ratio,
-    targetLengthSeconds: SEED_VIDEO_SETTINGS.target_length,
-    fps: SEED_VIDEO_SETTINGS.fps,
-    captions: SEED_VIDEO_SETTINGS.captions_on,
-    music: SEED_VIDEO_SETTINGS.music_on,
+    aspectRatio: seedSettings.aspect_ratio,
+    targetLengthSeconds: seedSettings.target_length,
+    fps: seedSettings.fps,
+    captions: seedSettings.captions_on,
+    music: seedSettings.music_on,
   };
   const brand: BrandContext = { channelName: channel.name as string, tone };
 
