@@ -64,6 +64,9 @@ is ever auto-created.
   sets the name only at create time), **archive**, and **delete**.
 - Moving an existing video between channels (videos keep their `channel_id`).
 - Multi-account / account switching (one account per session as today).
+- `render/actions.ts` (the debug-only render-spine sandbox) keeps its own
+  independent lazy seed of the `"Phase 1 Sandbox"` channel — **untouched** this
+  slice (see Back-compatibility).
 - No schema migration — the `channels` table already has every needed column
   with RLS.
 
@@ -85,15 +88,25 @@ editor exists — `bakeTheme` backfills the full `DEFAULT_THEME` from an empty
 `brand_kit`):
 
 ```ts
+import { DEFAULT_VOICE_ID, ELEVENLABS_DEFAULT_MODEL } from '@/lib/voice/elevenlabs';
+
 {
   account_id,                 // from session
   name,                       // validated input
   brand_kit: {},              // bakeTheme → DEFAULT_THEME
   brand_voice: {},            // no tone yet; generation falls back gracefully
-  voice_tts: { voice_id: DEFAULT_VOICE_ID, model: 'eleven_multilingual_v2' },
+  voice_tts: { voice_id: DEFAULT_VOICE_ID, model: ELEVENLABS_DEFAULT_MODEL },
   defaults: {},               // render falls back to per-video / code defaults
 }
 ```
+
+**Voice model — single source of truth.** The model must come from
+`ELEVENLABS_DEFAULT_MODEL` (`src/lib/voice/elevenlabs.ts`, currently
+`'eleven_multilingual_v2'`), **not** a re-typed literal. That constant is what
+synthesis uses live today, so it is current; and slice 5 (the voice-params
+editor with the live ElevenLabs model fetch) will reuse the same constant — one
+place to update if ElevenLabs deprecates the id, no drift between this default
+and the live list.
 
 Channel **names are not unique** — `name` is a display label. The old
 idempotent-by-name lookup is removed; identity is the `channelId`.
@@ -114,15 +127,21 @@ export function validateChannelName(name: unknown):
 **`createChannel(name: string)`** — server action
 (`src/app/(app)/channels/actions.ts`, `'use server'`):
 validate → resolve session account → insert with the create defaults under RLS
-→ return `{ ok: true; channelId } | { ok: false; reason }`. The caller
-redirects to `/channels/[channelId]`. Mirrors the existing action style
-(`@/lib/supabase/server`, discriminated-union return).
+→ return `{ ok: true; channelId } | { ok: false; reason }`. Mirrors the existing
+action style (`@/lib/supabase/server`, discriminated-union return).
+
+**The action MUST NOT call `redirect()` itself.** Next's `redirect()` works by
+throwing a special `NEXT_REDIRECT` error; calling it inside the action would
+short-circuit the function before (or instead of) returning the discriminated
+union, and a `try/catch` around the insert could even swallow it. Redirect is
+the **client's** job: `NewChannelForm` calls `router.push('/channels/<id>')`
+only on `{ ok: true }`. The action only ever returns a value.
 
 **`/channels` page** — server component: RLS read of the account's channels
-(`id, name, status, created_at`, ordered by `created_at` desc), renders a list
-(name → link to detail) plus a small client `NewChannelForm` that calls
-`createChannel` and routes to the new detail page on success, keeping the form
-open and showing `reason` on failure.
+(`id, name, status, created_at`, ordered by `created_at desc, id desc` — see
+"List ordering" below), renders a list (name → link to detail) plus a small
+client `NewChannelForm` that calls `createChannel` and routes to the new detail
+page on success, keeping the form open and showing `reason` on failure.
 
 **`/channels/[id]` page** — server component: RLS read of the one channel by id
 (`maybeSingle`); 404 (Next `notFound()`) if not found / not owned. Renders the
@@ -130,21 +149,34 @@ channel name and a "Brand settings — coming next" placeholder. A back link to
 `/channels`.
 
 **Channel picker (dashboard)** — `dashboard/page.tsx` (server) reads the
-account's channels and passes them to `PromptBox`. `PromptBox` (client):
+account's channels (`id, name`, ordered `created_at desc, id desc`) and passes
+the array to `PromptBox`. `PromptBox` (client):
 - If `channels.length === 0`: render the gate — "Create a channel first →"
-  linking to `/channels`; no prompt box.
-- Else: a `<select>` of channels (value = id, default = first/most-recent)
-  above the existing prompt textarea; `onGenerate` calls
+  linking to `/channels`; no prompt box, no select. **The "default to first"
+  logic below never runs in this branch**, so no `channels[0]` is dereferenced
+  on an empty list.
+- Else: a `<select>` of channels (value = id, default = `channels[0]` = the
+  most recent, safe because this branch is `length > 0`) above the existing
+  prompt textarea; `onGenerate` calls
   `startScriptGeneration(prompt, selectedChannelId)`.
 
-**`startScriptGeneration(prompt, channelId)`** — replace the seed block
-(actions.ts:52–72) with: read the chosen channel
-(`id, name, brand_voice` filtered by id, RLS-scoped) via `maybeSingle`; if
-missing → throw `'Channel not found.'` (RLS already scopes to the account, so a
-miss covers both not-found and not-owned). Use `channel.name` as
-`BrandContext.channelName` and `brand_voice.tone` as the tone. Everything
-downstream (video insert with `channel_id`, job, event emit) is unchanged.
-Delete `SEED_CHANNEL`/`SEED_BRAND`.
+**`startScriptGeneration(prompt, channelId)`** — the `channelId` is a **required
+second parameter** (no default). Behavior:
+
+- **`channelId` missing / `undefined` / empty / not a string** → throw a
+  friendly `'Pick a channel to generate a video.'` as the **first** check
+  (before any DB work). This is the explicit contract for a stale client (see
+  "Deploy ordering" below). The existing `PromptBox` `catch` renders the thrown
+  message; it is never an unhandled crash and never silently auto-seeds.
+- **Valid `channelId`** → read the chosen channel (`id, name, brand_voice`
+  filtered by `id`, RLS-scoped) via `maybeSingle`; if missing → throw
+  `'Channel not found.'` (RLS already scopes to the account, so a miss covers
+  both not-found and not-owned). Use `channel.name` as
+  `BrandContext.channelName` and `brand_voice.tone` as the tone.
+
+Everything downstream (video insert with `channel_id`, job, event emit) is
+unchanged. Delete `SEED_CHANNEL`/`SEED_BRAND` and the seed block
+(actions.ts:52–72).
 
 ### Data flow
 
@@ -157,26 +189,78 @@ PromptBox (client)        → pick channel → startScriptGeneration(prompt, cha
 startScriptGeneration     → verify channel (RLS) → create video (channel_id) + job → emit
 ```
 
+## List ordering
+
+Both the `/channels` list and the dashboard picker read order by
+`created_at desc, id desc`. The `id` tiebreaker makes "most recent" (the
+picker's default selection, which is load-bearing for the create flow)
+**deterministic** when two channels share a `created_at` to the second —
+otherwise their order could flip between reads and the default would feel
+random. `id` is a UUID (a stable, arbitrary-but-fixed tiebreaker); the goal is
+stability, not a meaningful secondary sort.
+
+## Deploy ordering (seed-removal rollout hazard)
+
+Removing the lazy seed changes both the action signature
+(`startScriptGeneration` now requires `channelId`) and its only caller
+(`PromptBox`). The risk window: a user with the **old** `PromptBox` loaded in a
+tab calls the **new** action with no `channelId`.
+
+- **Mitigation 1 — atomic deploy.** Action and client ship in the **same**
+  Vercel deploy (one build, one atomic swap), so a fresh load never has a
+  version mismatch.
+- **Mitigation 2 — defensive contract.** Even so, a *stale* tab can hit the new
+  action. The explicit `channelId`-missing check makes that a clean, friendly
+  `'Pick a channel to generate a video.'` (rendered by the old `PromptBox`'s
+  error `<pre>`), **not** an unhandled throw and **not** a silent off-brand
+  auto-seed. A reload picks up the new picker.
+
+Single-operator use lowers the stakes, but the stale-tab case is exactly what
+produced "a confusing failure" in the review, so the contract is stated, not
+assumed.
+
 ## Error handling
 
 - `validateChannelName` rejects empty / over-long with friendly reasons; the
   `NewChannelForm` shows the reason and keeps the form open.
 - `createChannel` returns `{ ok: false, reason }` on no-account / insert error;
-  the form surfaces it without navigating.
+  the form surfaces it without navigating. The action never throws `redirect()`.
 - `/channels/[id]` calls `notFound()` for a missing/unowned id.
-- `startScriptGeneration` throws `'Channel not found.'` if the chosen channel
-  isn't visible under RLS (existing `PromptBox` catch renders the message).
+- `startScriptGeneration` throws `'Pick a channel to generate a video.'` for a
+  missing/empty `channelId`, and `'Channel not found.'` if the chosen channel
+  isn't visible under RLS. Both are caught + rendered by `PromptBox`.
 - Zero-channels create flow shows the gate, never an error.
 
-## Back-compatibility
+## Back-compatibility (assumptions verified, not asserted)
 
-- Existing `"Studio"` channels (already created by prior video creation) simply
-  appear in the new list; nothing migrates them.
+- Existing seeded channels (`"Studio"` from video creation, `"Phase 1 Sandbox"`
+  from the render spine) simply appear in the new list; nothing migrates them.
 - Existing videos keep their `channel_id` (immutable); their renders are
   unaffected.
 - The seed lookup is removed, so **every new video now requires a chosen
-  channel**. Existing accounts already have at least one channel, so the gate
-  only triggers for genuinely empty accounts.
+  channel.**
+- **The "existing accounts have a channel" claim is not universally true, and
+  the design does not depend on it.** The old seed was created *lazily on first
+  video generation*, so an account that signed up but never generated has **no**
+  channel. After this slice that account correctly hits the zero-channels gate
+  (the intended behavior) — it is guided to create one, never crashed.
+- **No other code path assumes a channel exists / reads `channels[0]`
+  unguarded:**
+  - The dashboard server read returns a possibly-empty array and hands it to
+    `PromptBox`, where the gate handles `length === 0` *before* any
+    default-to-first; the `<select>` default only runs in the `length > 0`
+    branch.
+  - `render/actions.ts` (the **debug-only** render-spine sandbox behind
+    `/render`) has its **own independent** lazy seed of a *different* channel
+    (`"Phase 1 Sandbox"`). It is **intentionally left untouched** by this slice
+    (separate concern, throwaway scaffolding). It seeds-if-missing, so it never
+    assumes a channel exists; the channel it creates is valid and simply shows
+    up in the list. The "no auto-create" principle applies to the **production
+    video-create path**, which this slice fixes.
+  - Dev scripts (`scripts/drive-primitive.ts`, `scripts/seed-music.ts`) read
+    the first channel via `.order('created_at').limit(1).single()` and already
+    throw a clear `'no channel'` error when none exists. They are dev-only,
+    admin-client helpers, unaffected by this slice.
 
 ## Testing
 
@@ -186,10 +270,18 @@ startScriptGeneration     → verify channel (RLS) → create video (channel_id)
   with prior slices): create a channel from `/channels` → it appears in the
   list → open its detail shell → return to the dashboard → it appears in the
   picker → generate a video → the video uses the chosen channel (verify
-  `videos.channel_id`). Separately: an account with no channels shows the gate;
-  the picker selection drives `BrandContext.channelName`.
+  `videos.channel_id`). The picker selection drives `BrandContext.channelName`.
+- **Zero-channels path:** confirm an account with no channels shows the gate
+  (not an error, not a crash). Since existing accounts already have channels,
+  verify this by reading the live `channels` table for the operator's account
+  (it has ≥1, so the gate won't show in normal use) and by reasoning through the
+  empty-array render path; a brand-new account would exercise it directly.
+- **Stale-client contract:** confirm `startScriptGeneration('prompt')` with no
+  `channelId` throws `'Pick a channel to generate a video.'` (the deploy-window
+  contract), surfaced cleanly by `PromptBox`.
 
 ## Open questions
 
-None. Schema, defaults, the create-flow gate, and the seed removal are all
-settled.
+None. Schema, defaults, the create-flow gate, the seed removal, the
+missing-`channelId` contract, the deploy ordering, and the untouched render
+sandbox are all settled.
