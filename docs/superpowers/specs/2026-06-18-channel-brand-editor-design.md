@@ -79,6 +79,13 @@ export const FONT_ALLOWLIST = [
   'Bebas Neue',
 ] as const;
 export type BrandFont = (typeof FONT_ALLOWLIST)[number];
+
+// Family name → @remotion/google-fonts subpath (space-less PascalCase):
+// 'Playfair Display' → 'PlayfairDisplay'. Exported so the drift test checks the
+// REAL mapping, not a reimplementation.
+export function fontSubpath(family: string): string {
+  return family.replace(/\s+/g, '');
+}
 ```
 
 These exact strings are what `bakeTheme` stores in `typography.font`, what the
@@ -87,14 +94,20 @@ editor dropdown offers, what `validateBrandForm` accepts, and what the CSS
 
 **Renderer change:** a new `remotion/brand-fonts.ts` statically imports each
 allowlisted font's `loadFont` (`@remotion/google-fonts/Poppins`,
-`/Montserrat`, `/Inter`, `/Roboto`, `/PlayfairDisplay`, `/BebasNeue` — note the
-PascalCase, space-less subpaths) and calls every `loadFont()` at module top.
+`/Montserrat`, `/Inter`, `/Roboto`, `/PlayfairDisplay`, `/BebasNeue` — the
+`fontSubpath` of each family) and calls every `loadFont()` at module top.
 `ReelComposition` imports `remotion/brand-fonts` instead of the single Poppins
 import. All six fonts load before the first frame; the CSS `fontFamily` (from
-`spec.theme.fonts`) then resolves to whichever the brand picked. The
-family-name list in `brand-fonts.ts` **must mirror `FONT_ALLOWLIST`** — a code
-comment in each file states this (the two can't share an import: `fonts.ts` is a
-pure lib consumed by `node:test`; `brand-fonts.ts` pulls Remotion google-fonts).
+`spec.theme.fonts`) then resolves to whichever the brand picked.
+
+**Drift guard (not just a comment).** `fonts.ts` (pure, `node:test`) and
+`brand-fonts.ts` (pulls Remotion) can't share an import, so the family list is
+unavoidably duplicated. A unit test (`fonts.test.ts`) reads `brand-fonts.ts` as
+**text** and asserts that for every family in `FONT_ALLOWLIST`, the import
+`@remotion/google-fonts/${fontSubpath(family)}` appears in the file — so adding
+a font to one list without the other (or mis-mapping a space-less subpath) fails
+the suite, not silently at render time. The test uses the exported `fontSubpath`
+so it exercises the real transform.
 
 **Consequence:** this slice carries a renderer change → a `deploy:remotion`
 re-bundle and a render verification (a video using a non-Poppins channel font
@@ -113,13 +126,15 @@ No new columns — `channels` already has `name`, `brand_kit`, `brand_voice`,
 -- brand_voice and defaults are written wholesale (this editor owns all their
 -- keys). SECURITY INVOKER → the caller's RLS on channels applies (acct_isolation
 -- with check (auth_owns_account(account_id))), so only the owner's row updates.
+-- RETURNS the updated id (NULL when no row matched) so the action can tell a
+-- real save from a zero-row miss and never report a phantom "Saved".
 create or replace function update_channel_brand(
   p_channel_id    uuid,
   p_name          text,
   p_brand_kit_patch jsonb,
   p_brand_voice   jsonb,
   p_defaults      jsonb
-) returns void
+) returns uuid
 language sql
 security invoker
 as $$
@@ -129,7 +144,8 @@ as $$
       brand_voice = p_brand_voice,
       defaults    = p_defaults,
       updated_at  = now()
-  where id = p_channel_id;
+  where id = p_channel_id
+  returning id;
 $$;
 
 grant execute on function update_channel_brand(uuid, text, jsonb, jsonb, jsonb) to authenticated;
@@ -175,9 +191,12 @@ export function parseChannelBrand(row: {
   defaults: unknown;
 }): BrandForm;
 
-// Validate a form submission: name via validateChannelName; each color a valid
-// hex (#RGB or #RRGGBB); font ∈ FONT_ALLOWLIST; motion/density ∈ their enums;
-// booleans. On success return the exact pieces the RPC needs.
+// Validate a form submission: name via validateChannelName; ALL 8 ColorKeys
+// present and each a valid hex (#RGB or #RRGGBB) — reject if any key is missing,
+// because colors is replaced WHOLESALE on the || merge, so a partial object would
+// silently reset the missing key to DEFAULT_THEME; font ∈ FONT_ALLOWLIST;
+// motion/density ∈ their enums; booleans. On success return the exact pieces the
+// RPC needs (brandKitPatch.colors always carries all 8 keys).
 export function validateBrandForm(input: unknown):
   | { ok: true; value: {
       name: string;
@@ -204,10 +223,12 @@ export async function saveChannelBrand(
 
 Validate via `validateBrandForm` (return its `reason` on failure) → call the
 `update_channel_brand` RPC with `(channelId, name, brandKitPatch, brandVoice,
-defaults)` → on RPC error return `{ ok: false, reason }`, else `{ ok: true }`.
-RLS (SECURITY INVOKER) guarantees only the owner's channel updates; a
-non-owned/missing id updates zero rows and still returns `{ ok: true }` (benign;
-the read on the page already 404s a non-owned channel before the editor renders).
+defaults)`. On RPC error return `{ ok: false, reason }`. The RPC returns the
+updated channel id, or `null` when **zero rows matched** (wrong id, RLS
+regression, channel deleted in another tab mid-edit) — treat that as
+`{ ok: false, reason: 'Channel not found.' }`, NOT success. RLS (SECURITY
+INVOKER) guarantees only the owner's channel can update. "Saved" must mean
+something was saved — no phantom save.
 
 ### UI
 
@@ -263,9 +284,18 @@ later render             → bakeTheme(brand_kit) embeds colors/font/motion in t
   brand_kit → all defaults; populated brand_kit → stored colors/font/motion;
   off-allowlist stored font → falls back to default; tone/defaults parsed with
   code defaults. `validateBrandForm` — rejects bad name, bad hex (and accepts
-  `#fff` + `#ffffff`), off-allowlist font, bad motion/density; on success returns
-  the exact RPC pieces with blank tone omitted. `FONT_ALLOWLIST` non-empty and
-  includes `'Poppins'` (the renderer's prior default).
+  `#fff` + `#ffffff`), off-allowlist font, bad motion/density, **and a colors
+  object missing any of the 8 keys**; on success returns the exact RPC pieces
+  (all 8 colors present) with blank tone omitted. (`parseChannelBrand` may import
+  `bakeTheme`/`DEFAULT_THEME` from `../composition/theme` — confirmed pure: its
+  only import is a type-only `Theme` from `../primitives/contract`, erased at
+  runtime, so the `node:test` loader pulls nothing Remotion/browser.)
+- **Unit (`src/lib/channels/fonts.test.ts`) — the drift guard:** `FONT_ALLOWLIST`
+  non-empty and includes `'Poppins'` (the renderer's prior default);
+  `fontSubpath('Playfair Display') === 'PlayfairDisplay'` and
+  `fontSubpath('Bebas Neue') === 'BebasNeue'`; and — reading `remotion/brand-fonts.ts`
+  as text — every `@remotion/google-fonts/${fontSubpath(family)}` import is present
+  for each family in `FONT_ALLOWLIST`. Diverging the two lists fails this test.
 - **Migration:** `npm run db:apply` the RPC; confirm it records + applies.
 - **Manual / app-run e2e:** open `/channels/[id]` → fields show current values →
   change colors/font/motion/tone/defaults → Save → reload shows the saved values;
@@ -273,7 +303,10 @@ later render             → bakeTheme(brand_kit) embeds colors/font/motion in t
 - **Render verification (required — renderer change):** `npm run deploy:remotion`
   to re-bundle, then render a video on a channel whose font is NOT Poppins and
   confirm the output renders in that font and the brand colors; confirm a
-  Poppins channel still renders correctly.
+  Poppins channel still renders correctly. **Observe Lambda init time** in the
+  render logs (six `loadFont()` calls now run at module top instead of one) and
+  confirm it hasn't risen meaningfully — the load-all approach is chosen for
+  simplicity; if init cost is material, a follow-up can load only the spec's font.
 
 ## Open questions
 
