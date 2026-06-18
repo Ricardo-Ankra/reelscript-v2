@@ -161,12 +161,19 @@ export async function createChannel(name: string): Promise<CreateChannelResult> 
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, reason: 'Not signed in.' };
 
-  const { data: account, error: acctErr } = await supabase
+  // accounts: RLS scopes to owner_user_id = auth.uid() and accounts_owner_idx is
+  // UNIQUE on owner_user_id, so a session sees at most one account. maybeSingle()
+  // turns the zero-row edge (e.g. signup-trigger race) into a clean null →
+  // friendly reason, never a thrown PostgREST error.
+  const { data: account } = await supabase
     .from('accounts')
     .select('id')
-    .single();
-  if (acctErr || !account) return { ok: false, reason: 'No account found.' };
+    .maybeSingle();
+  if (!account) return { ok: false, reason: 'No account found.' };
 
+  // The channels INSERT is independently RLS-checked: policy acct_isolation has
+  // `with check (auth_owns_account(account_id))`, so account_id must belong to
+  // the caller — the insert can't smuggle another account's id.
   const { data, error } = await supabase
     .from('channels')
     .insert({
@@ -590,8 +597,16 @@ git commit -m "feat(channels): require a chosen channel in the create flow; drop
 
 ---
 
+## Verified preconditions (RLS)
+
+Confirmed against `supabase/migrations/20260604184050_init_schema.sql` before planning — do not re-litigate:
+
+- **One account per session.** `accounts_owner_idx` is UNIQUE on `owner_user_id` (schema:102) and policy `accounts_owner` is `using (owner_user_id = auth.uid()) with check (...)` (schema:548-550). A session sees at most one account; `.single()`/`.maybeSingle()` is safe.
+- **Channel INSERT scopes `account_id` to the caller.** Policy `acct_isolation on channels for all using (auth_owns_account(account_id)) with check (auth_owns_account(account_id))` (schema:563-564); `auth_owns_account` checks `owner_user_id = auth.uid()` (schema:107-114). The `with check` binds the INSERT, so a wrong `account_id` is rejected — the select→insert is not a trust gap.
+- **`ELEVENLABS_DEFAULT_MODEL` exists** at `@/lib/voice/elevenlabs` (`= 'eleven_multilingual_v2'`), exported alongside `DEFAULT_VOICE_ID`. No new export needed.
+
 ## Notes for the implementer
 
 - Run each task on its own; commit per task (Task 2 is one multi-file commit, the channels surface).
 - Do not touch `src/app/(app)/render/actions.ts` — its `"Phase 1 Sandbox"` seed is intentionally retained (debug-only).
-- The `channels` table needs no migration; if an insert RLS-fails, check the session is authenticated (it should be — every `(app)` route is behind the layout's auth gate).
+- The `channels` table needs no migration. An INSERT can only RLS-fail if the session is unauthenticated (every `(app)` route is behind the layout's auth gate) — `account_id` is the session's own account, which the `with check` policy permits.
