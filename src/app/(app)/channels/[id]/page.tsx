@@ -6,6 +6,9 @@ import { parseCaptionEmphasis, defaultToneColors } from '@/lib/channels/caption-
 import { bakeTheme } from '@/lib/composition/theme';
 import { BrandEditor } from './BrandEditor';
 import { CaptionEmphasisEditor } from './CaptionEmphasisEditor';
+import { signedGetUrl } from '@/lib/r2';
+import { sanitizeLogos, type LogoSlot } from '@/lib/channels/logos';
+import { LogosEditor } from './LogosEditor';
 
 // Channel brand + caption-emphasis editors (Phase 8 slices 2–3). RLS scopes the
 // read; a miss (not found OR not owned) → 404. The parsers show current EFFECTIVE
@@ -35,6 +38,12 @@ export default async function ChannelDetailPage({
   const theme = bakeTheme(channel.brand_kit as never);
   const emphasisInitial = parseCaptionEmphasis(channel.brand_kit, theme);
 
+  const logos = sanitizeLogos((channel.brand_kit as { logos?: unknown } | null)?.logos);
+  const logoPreviewUrls: Partial<Record<LogoSlot, string>> = {};
+  for (const [slot, key] of Object.entries(logos)) {
+    logoPreviewUrls[slot as LogoSlot] = await signedGetUrl(key, 60 * 60);
+  }
+
   return (
     <div className="space-y-8">
       <Link href="/channels" className="text-sm underline opacity-70 hover:opacity-100">
@@ -56,6 +65,10 @@ export default async function ChannelDetailPage({
         fonts={theme.fonts}
         followColors={defaultToneColors(theme)}
       />
+
+      <hr className="border-black/10 dark:border-white/10" />
+
+      <LogosEditor channelId={channel.id as string} initial={logos} initialPreviewUrls={logoPreviewUrls} />
     </div>
   );
 }
