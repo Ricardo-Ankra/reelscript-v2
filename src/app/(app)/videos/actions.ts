@@ -7,16 +7,6 @@ import {
   type VideoConfig,
   type BrandContext,
 } from '@/lib/ai/script-generation';
-import { DEFAULT_VOICE_ID } from '@/lib/voice/elevenlabs';
-
-// One seeded channel with minimal brand (name, primary colour, font, voice).
-// Seeded, not a settings UI (Phase 2). The brand informs the generation prompt.
-const SEED_CHANNEL = 'Studio';
-const SEED_BRAND = {
-  brand_kit: { colors: { primary: '#E2725B' }, typography: { font: 'Poppins' } },
-  voice_tts: { voice_id: DEFAULT_VOICE_ID, model: 'eleven_multilingual_v2' },
-  brand_voice: { tone: 'clear, friendly, concise' },
-};
 
 // video.settings is the single source of truth for config; the same values are
 // copied into the generation event so the worker need not re-read the row.
@@ -28,13 +18,19 @@ const SEED_VIDEO_SETTINGS = {
   music_on: DEFAULT_VIDEO_CONFIG.music,
 };
 
-// Prompt → new video → generation job. Returns the video id so the caller can
-// open the editor, where scenes stream in over Realtime.
+// Prompt + chosen channel → new video → generation job. Returns the video id so
+// the caller can open the editor, where scenes stream in over Realtime. The
+// channel is required and RLS-verified — no channel is ever auto-created.
 export async function startScriptGeneration(
   prompt: string,
+  channelId: string,
 ): Promise<{ videoId: string; jobId: string }> {
   const trimmed = prompt.trim();
   if (!trimmed) throw new Error('Enter a prompt.');
+  // Required-channel contract (also covers a stale client during the rollout):
+  if (typeof channelId !== 'string' || !channelId.trim()) {
+    throw new Error('Pick a channel to generate a video.');
+  }
 
   const supabase = await createClient();
   const {
@@ -49,27 +45,15 @@ export async function startScriptGeneration(
   if (acctErr || !account) throw new Error(`No account: ${acctErr?.message ?? 'not found'}`);
   const accountId = account.id as string;
 
-  // Seed the channel (idempotent by name).
-  let channelId: string;
-  let tone: string | undefined;
-  const existingChannel = await supabase
+  // Resolve the chosen channel. RLS scopes the read to this account, so a miss
+  // covers both not-found and not-owned.
+  const { data: channel } = await supabase
     .from('channels')
-    .select('id, brand_voice')
-    .eq('name', SEED_CHANNEL)
+    .select('id, name, brand_voice')
+    .eq('id', channelId)
     .maybeSingle();
-  if (existingChannel.data) {
-    channelId = existingChannel.data.id as string;
-    tone = (existingChannel.data.brand_voice as { tone?: string } | null)?.tone;
-  } else {
-    const ins = await supabase
-      .from('channels')
-      .insert({ account_id: accountId, name: SEED_CHANNEL, ...SEED_BRAND })
-      .select('id')
-      .single();
-    if (ins.error || !ins.data) throw new Error(`seed channel: ${ins.error?.message}`);
-    channelId = ins.data.id as string;
-    tone = SEED_BRAND.brand_voice.tone;
-  }
+  if (!channel) throw new Error('Channel not found.');
+  const tone = (channel.brand_voice as { tone?: string } | null)?.tone;
 
   // Create the video with config baked into settings (written once).
   const title = trimmed.length > 80 ? `${trimmed.slice(0, 77)}…` : trimmed;
@@ -77,7 +61,7 @@ export async function startScriptGeneration(
     .from('videos')
     .insert({
       account_id: accountId,
-      channel_id: channelId,
+      channel_id: channel.id as string,
       title,
       prompt: trimmed,
       settings: SEED_VIDEO_SETTINGS,
@@ -112,7 +96,7 @@ export async function startScriptGeneration(
     captions: SEED_VIDEO_SETTINGS.captions_on,
     music: SEED_VIDEO_SETTINGS.music_on,
   };
-  const brand: BrandContext = { channelName: SEED_CHANNEL, tone };
+  const brand: BrandContext = { channelName: channel.name as string, tone };
 
   await inngest.send({
     name: 'script/generate',
