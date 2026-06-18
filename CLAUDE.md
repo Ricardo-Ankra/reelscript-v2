@@ -94,10 +94,11 @@ authoritative and the `docs/` copy remains the design record.
     **code editor is a textarea** (no Monaco). Primitive drafting is pinned to **Opus**
     (`model_routing` is Phase 8). The **studio UI's browser interaction pass** (watching
     auto-fix retry live) is the operator's manual review; the backend it drives is proven.
-  - **Phase 6 deferrals carried forward:** **aspect-ratio / FPS / target-length
-    controls** and **thumbnail generation** are Phase 8 (the milestone was scoped to
-    the three creative features; aspect/FPS are already honored at render time, just
-    no UI). Music selection is a **deterministic mood-match in code** (not an AI
+  - **Phase 6 deferrals carried forward:** ~~aspect-ratio / FPS / target-length
+    controls~~ **shipped** — per-video on `VideoSettingsPanel`, and channel-level
+    defaults (`channels.defaults` aspect/fps/target_length, inherited by new videos
+    at creation) via the Phase-8 video-defaults slice (2026-06-18). **Thumbnail
+    generation** is still Phase 8. Music selection is a **deterministic mood-match in code** (not an AI
     choice), and the **Music panel is minimal** (reroll + master volume) — the full
     panel (ducking depth, loop, in/out crop, fade) is Phase 8, though the re-mux
     already accepts those params. Seed beds are **generated via the ElevenLabs Music
