@@ -2,10 +2,14 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { parseChannelBrand } from '@/lib/channels/brand';
+import { parseCaptionEmphasis, defaultToneColors } from '@/lib/channels/caption-emphasis';
+import { bakeTheme } from '@/lib/composition/theme';
 import { BrandEditor } from './BrandEditor';
+import { CaptionEmphasisEditor } from './CaptionEmphasisEditor';
 
-// Channel brand editor (Phase 8 slice 2). RLS scopes the read; a miss (not found
-// OR not owned) → 404. parseChannelBrand shows current EFFECTIVE values.
+// Channel brand + caption-emphasis editors (Phase 8 slices 2–3). RLS scopes the
+// read; a miss (not found OR not owned) → 404. The parsers show current EFFECTIVE
+// values; the two sections save independently.
 export default async function ChannelDetailPage({
   params,
 }: {
@@ -28,8 +32,11 @@ export default async function ChannelDetailPage({
     defaults: channel.defaults,
   });
 
+  const theme = bakeTheme(channel.brand_kit as never);
+  const emphasisInitial = parseCaptionEmphasis(channel.brand_kit, theme);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <Link href="/channels" className="text-sm underline opacity-70 hover:opacity-100">
         ← Channels
       </Link>
@@ -40,6 +47,15 @@ export default async function ChannelDetailPage({
         </p>
       </div>
       <BrandEditor channelId={channel.id as string} initial={initial} />
+
+      <hr className="border-black/10 dark:border-white/10" />
+
+      <CaptionEmphasisEditor
+        channelId={channel.id as string}
+        initial={emphasisInitial}
+        fonts={theme.fonts}
+        followColors={defaultToneColors(theme)}
+      />
     </div>
   );
 }
