@@ -17,6 +17,17 @@ export default async function DashboardPage() {
     .select('id, name, created_at')
     .maybeSingle();
 
+  const { data: channels } = await supabase
+    .from('channels')
+    .select('id, name')
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
+
+  const channelOptions = (channels ?? []).map((c) => ({
+    id: c.id as string,
+    name: c.name as string,
+  }));
+
   return (
     <div className="space-y-6">
       <div>
@@ -30,7 +41,7 @@ export default async function DashboardPage() {
       </div>
 
       <section className="rounded-lg border border-black/10 p-4 dark:border-white/10">
-        <PromptBox />
+        <PromptBox channels={channelOptions} />
       </section>
 
       <section className="space-y-2 rounded-lg border border-black/10 p-4 text-sm dark:border-white/10">
