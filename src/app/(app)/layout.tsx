@@ -30,6 +30,9 @@ export default async function AppLayout({
           <Link href="/primitives" className="text-sm opacity-70 hover:opacity-100">
             Primitives
           </Link>
+          <Link href="/channels" className="text-sm opacity-70 hover:opacity-100">
+            Channels
+          </Link>
         </nav>
         <div className="flex items-center gap-4 text-sm">
           <span className="opacity-70">{user.email}</span>
