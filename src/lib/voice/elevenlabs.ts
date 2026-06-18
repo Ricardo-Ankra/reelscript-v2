@@ -68,3 +68,38 @@ export async function synthesize(params: SynthesizeParams): Promise<SynthesisRes
   const json = (await res.json()) as TtsRawResponse;
   return decodeTtsResponse(json);
 }
+
+export type CatalogVoice = { id: string; name: string };
+export type CatalogModel = { id: string; name: string };
+
+// GET /v1/voices → the account's available voices, mapped to { id, name }.
+// Server-only (uses the xi-api-key). A non-2xx throws (same posture as synthesize);
+// the loadVoiceCatalog action catches it.
+export async function listVoices(): Promise<CatalogVoice[]> {
+  const res = await fetch(`${ELEVENLABS_BASE}/voices`, {
+    headers: { 'xi-api-key': serverEnv.elevenlabs.apiKey },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`ElevenLabs ${res.status}: ${body.slice(0, 500)}`);
+  }
+  const json = (await res.json()) as { voices?: Array<{ voice_id?: string; name?: string }> };
+  return (json.voices ?? [])
+    .filter((v): v is { voice_id: string; name?: string } => typeof v.voice_id === 'string')
+    .map((v) => ({ id: v.voice_id, name: v.name ?? v.voice_id }));
+}
+
+// GET /v1/models → available models, mapped to { id, name }.
+export async function listModels(): Promise<CatalogModel[]> {
+  const res = await fetch(`${ELEVENLABS_BASE}/models`, {
+    headers: { 'xi-api-key': serverEnv.elevenlabs.apiKey },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`ElevenLabs ${res.status}: ${body.slice(0, 500)}`);
+  }
+  const json = (await res.json()) as Array<{ model_id?: string; name?: string }>;
+  return (json ?? [])
+    .filter((m): m is { model_id: string; name?: string } => typeof m.model_id === 'string')
+    .map((m) => ({ id: m.model_id, name: m.name ?? m.model_id }));
+}
