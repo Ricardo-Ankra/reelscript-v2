@@ -5,6 +5,7 @@ import { signedGetUrl } from '@/lib/r2';
 import { inngest } from '@/lib/inngest/client';
 import { estimateSynthesisCost } from '@/lib/voice/estimate';
 import { DEFAULT_VOICE_ID, ELEVENLABS_DEFAULT_MODEL } from '@/lib/voice/elevenlabs';
+import { voiceSettingsFromTts } from '@/lib/channels/voice';
 
 // Phase 3 voice synthesis surface (spec 6.4). estimateSynthesis is the inline
 // pre-pay cost preview; synthesizeScenes kicks off the Inngest job; getSceneAudioUrl
@@ -92,9 +93,16 @@ export async function synthesizeScenes(
   if (created.error || !created.data) throw new Error(`create job: ${created.error?.message}`);
   const jobId = created.data.id as string;
 
+  const settings = voiceSettingsFromTts(voiceTts);
   await inngest.send({
     name: 'voice/synthesize',
-    data: { jobId, videoId, accountId, sceneIds: ids, voice: { voiceId, modelId } },
+    data: {
+      jobId,
+      videoId,
+      accountId,
+      sceneIds: ids,
+      voice: { voiceId, modelId, ...(settings ? { settings } : {}) },
+    },
   });
 
   return { jobId };
