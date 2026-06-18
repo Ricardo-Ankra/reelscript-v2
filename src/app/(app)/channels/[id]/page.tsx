@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { parseChannelBrand } from '@/lib/channels/brand';
 import { parseCaptionEmphasis, defaultToneColors } from '@/lib/channels/caption-emphasis';
+import { parseVoiceTts } from '@/lib/channels/voice';
+import { VoiceEditor } from './VoiceEditor';
 import { bakeTheme } from '@/lib/composition/theme';
 import { BrandEditor } from './BrandEditor';
 import { CaptionEmphasisEditor } from './CaptionEmphasisEditor';
@@ -22,7 +24,7 @@ export default async function ChannelDetailPage({
   const supabase = await createClient();
   const { data: channel } = await supabase
     .from('channels')
-    .select('id, name, brand_kit, brand_voice, defaults')
+    .select('id, name, brand_kit, brand_voice, defaults, voice_tts')
     .eq('id', id)
     .maybeSingle();
 
@@ -43,6 +45,8 @@ export default async function ChannelDetailPage({
   for (const [slot, key] of Object.entries(logos)) {
     logoPreviewUrls[slot as LogoSlot] = await signedGetUrl(key, 60 * 60);
   }
+
+  const voiceInitial = parseVoiceTts(channel.voice_tts);
 
   return (
     <div className="space-y-8">
@@ -69,6 +73,10 @@ export default async function ChannelDetailPage({
       <hr className="border-black/10 dark:border-white/10" />
 
       <LogosEditor channelId={channel.id as string} initial={logos} initialPreviewUrls={logoPreviewUrls} />
+
+      <hr className="border-black/10 dark:border-white/10" />
+
+      <VoiceEditor channelId={channel.id as string} initial={voiceInitial} />
     </div>
   );
 }
