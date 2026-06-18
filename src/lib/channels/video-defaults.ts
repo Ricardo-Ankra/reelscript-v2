@@ -21,7 +21,6 @@ export const VIDEO_DEFAULTS_FALLBACK: VideoDefaultsForm = {
 };
 
 const ASPECTS: readonly AspectRatio[] = ['9:16', '1:1', '16:9'];
-const FPSES: readonly Fps[] = [24, 30];
 
 function isAspect(v: unknown): v is AspectRatio {
   return typeof v === 'string' && (ASPECTS as readonly string[]).includes(v);
