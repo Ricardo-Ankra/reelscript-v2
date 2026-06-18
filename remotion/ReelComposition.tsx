@@ -1,14 +1,10 @@
 import type { FC } from 'react';
 import { AbsoluteFill, Audio, Sequence, type CalculateMetadataFunction } from 'remotion';
-import { loadFont } from '@remotion/google-fonts/Poppins';
+import './brand-fonts'; // loads every brand-allowlisted font (spec 10.4); gates rendering internally
 import { ThemeContext, AssetContext, type ResolvedAsset } from '../src/lib/primitives/theme-context';
 import type { CompositionSpec } from '../src/lib/composition/spec';
 import { PRIMITIVES } from './primitives/registry';
 import { AnimatedCaptionTrack } from './AnimatedCaptionTrack';
-
-// Register the brand font before the first frame is drawn (spec 10.4). Remotion's
-// google-fonts integration gates rendering on this internally.
-loadFont();
 
 export type ReelProps = {
   /** Signed R2 URL to the composition spec JSON (spec-by-pointer, spec 10.2). */
