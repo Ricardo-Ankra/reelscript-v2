@@ -1,6 +1,6 @@
 import 'server-only';
 import { renderStillOnLambda, type AwsRegion } from '@remotion/lambda/client';
-import { anthropic, COMPOSITION_MODEL } from '../ai/anthropic';
+import { anthropic } from '../ai/anthropic';
 import { buildGate2QaPrompt, parseGate2Verdict, frameLooksBlank } from '../ai/vision';
 
 // Gate 2 (spec 11.2): render ONE still from the middle of the video on Lambda, then
@@ -16,6 +16,7 @@ export interface Gate2Params {
   specUrl: string; // the signed render-time spec — the same one the video render uses
   midFrame: number; // frame to sample (caller computes durationInFrames/2)
   sceneIntent: string; // narration / shot intent for the scene at the mid frame
+  model: string;
 }
 
 export interface Gate2Result {
@@ -58,7 +59,7 @@ export async function runGate2(params: Gate2Params): Promise<Gate2Result> {
   const b64 = Buffer.from(await res.arrayBuffer()).toString('base64');
 
   const msg = await anthropic().messages.create({
-    model: COMPOSITION_MODEL,
+    model: params.model,
     max_tokens: 1024,
     messages: [
       {

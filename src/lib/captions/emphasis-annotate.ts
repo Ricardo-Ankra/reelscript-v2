@@ -1,5 +1,5 @@
 import 'server-only';
-import { anthropic, EMPHASIS_MODEL } from '../ai/anthropic';
+import { anthropic } from '../ai/anthropic';
 import { tokenizeSpokenWords } from './tokenize';
 import {
   buildEmphasisSystemPrompt,
@@ -23,13 +23,14 @@ export async function annotateSceneEmphasis(input: {
   alignment: TtsAlignment;
   sceneScript: string;
   density: EmphasisDensity;
+  model: string;
 }): Promise<WordEmphasis[]> {
   const words = tokenizeSpokenWords(input.alignment);
   if (words.length === 0) return [];
 
   try {
     const msg = await anthropic().messages.create({
-      model: EMPHASIS_MODEL,
+      model: input.model,
       max_tokens: 1024,
       system: buildEmphasisSystemPrompt(),
       messages: [
