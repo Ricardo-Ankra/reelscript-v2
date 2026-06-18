@@ -51,6 +51,11 @@ import { loadComposeRegistry } from '@/lib/primitives/registry-load';
 // =============================================================================
 
 const GATE1_RETRY_BUDGET = 2; // initial + 2 retries (spec 11.1)
+// Cost figures assume Sonnet pricing. With model_routing the composition + vision
+// model can be re-routed (Opus/Haiku/Fable), so a recorded cost_event is only
+// approximate when it isn't Sonnet. Acceptable: cost events are observe-only and
+// the cost-ledger UI is deferred. Follow-up: a per-model price table keyed off the
+// resolved model id.
 const SONNET_USD_PER_1M_IN = 3;
 const SONNET_USD_PER_1M_OUT = 15;
 
