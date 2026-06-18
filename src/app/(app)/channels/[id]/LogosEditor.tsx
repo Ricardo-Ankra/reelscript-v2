@@ -61,7 +61,11 @@ export function LogosEditor({
         return;
       }
       setKeys((k) => ({ ...k, [slot]: res.key }));
-      setPreviews((p) => ({ ...p, [slot]: URL.createObjectURL(file) }));
+      setPreviews((p) => {
+        const old = p[slot];
+        if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
+        return { ...p, [slot]: URL.createObjectURL(file) };
+      });
       setDirty(true);
     } catch {
       setError('Upload failed. Please try again.');
@@ -77,6 +81,8 @@ export function LogosEditor({
       return next;
     });
     setPreviews((p) => {
+      const old = p[slot];
+      if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
       const next = { ...p };
       delete next[slot];
       return next;
