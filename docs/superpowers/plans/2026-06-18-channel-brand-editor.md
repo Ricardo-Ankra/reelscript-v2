@@ -67,6 +67,10 @@ test('isBrandFont: accepts allowlisted, rejects others', () => {
 
 test('drift guard: every allowlisted font has a loadFont import in remotion/brand-fonts.ts', () => {
   const src = readFileSync(new URL('../../../remotion/brand-fonts.ts', import.meta.url), 'utf8');
+  // Sanity: prove we read the REAL file — a misresolved-but-readable path (or an
+  // empty file) must not let this pass vacuously before the loop runs.
+  assert.ok(src.length > 0, 'brand-fonts.ts is empty or unreadable — check the path');
+  assert.ok(src.includes('loadFont'), 'brand-fonts.ts has no loadFont imports — wrong file?');
   for (const family of FONT_ALLOWLIST) {
     const subpath = `@remotion/google-fonts/${fontSubpath(family)}`;
     assert.ok(
@@ -162,6 +166,8 @@ Expected: PASS — 4 tests.
 
 Run: `npx tsc --noEmit`
 Expected: no errors (the six `@remotion/google-fonts/<Font>` subpaths resolve; `ReelComposition` compiles with the side-effect import).
+
+**Division of labor (subpath correctness vs presence):** because `brand-fonts.ts` uses *static* imports, this `tsc` step is the real backstop for a *wrong* subpath — a non-existent `@remotion/google-fonts/Xyz` fails module resolution at compile, here, not at render. The drift test (step 1) covers *presence* (every allowlisted family has an import); `tsc` covers *correctness* (each subpath actually exists). A `fontSubpath` bug would make both the renderer import and the test expectation wrong identically, so the drift test could pass — but `tsc` would still reject the bad static import. The render gate is therefore never the first place a bad subpath surfaces.
 
 - [ ] **Step 8: Commit**
 
@@ -342,8 +348,11 @@ export interface BrandSaveValue {
 }
 
 // Build the form's initial model from a channel row, showing CURRENT EFFECTIVE
-// values: colors + motion via bakeTheme (stored-or-default); font from
-// typography.font if allowlisted else Poppins; tone/defaults with code defaults.
+// values: colors + motion via bakeTheme (stored-or-default). NOTE bakeTheme
+// returns `motion` as the PRESET STRING ('subtle'|'standard'|'punchy'), not a
+// resolved durations/easings object (see theme.ts), so baked.motion round-trips
+// to the form/select directly. font comes from typography.font if allowlisted
+// else Poppins; tone/defaults from their columns with code defaults.
 export function parseChannelBrand(row: {
   name: string;
   brand_kit: unknown;
@@ -876,6 +885,7 @@ Start the dev server. Verify:
 2. Change colours (picker + hex), font, motion, tone, the three defaults → **Save** → "Saved" appears, button disables (not dirty).
 3. Reload → the saved values persist.
 4. Enter an invalid hex (e.g. `red`) in a colour text field → Save → the reason shows and nothing persists; fix it → Save succeeds.
+   - **Known cosmetic quirk (note, not a fix):** the native `<input type="color">` only renders 6-digit hex, so typing a valid 3-digit `#fff` in the text field shows black in the picker swatch (the text value and validation still accept/save `#fff` correctly — data is not corrupted). Native pickers always emit `#rrggbb`, so picking a colour keeps both in sync. A later polish could normalize 3-digit → 6-digit on blur.
 5. Confirm a prior slice's `brand_kit` sibling key would survive (the merge is shallow) — not directly visible yet (slices 3–4), reason through the RPC `||`.
 
 **Render gate (required, operator-run before merge):** `npm run deploy:remotion`, then render a video on a channel whose font is NOT Poppins → confirm the output renders in that font with the brand colours, a Poppins channel still renders, and Lambda init time in the logs is unchanged.
