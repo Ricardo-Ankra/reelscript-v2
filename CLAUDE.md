@@ -117,8 +117,15 @@ authoritative and the `docs/` copy remains the design record.
     the 7-tag vocab sparingly and synthesis honors it via a **built-in model-aware
     profile** (`voice/profile.ts`; v2: strip + pause→SSML + scene-level
     `voice_settings` nudge; v3: inline audio tags). **The editable per-model
-    `voice_profiles` table/UI is still Phase 8 (slice 2)** — it will override the
-    built-in. The voice
+    `voice_profiles` table/UI shipped 2026-06-21 (slice 2)** — the built-in profile
+    is now the *default mapping* of a general `applyStoredProfile` engine
+    (`applyVoiceProfile` delegates to it, slice-1 behavior frozen by an equivalence
+    test); synthesis loads the account's stored `tag_mappings` for the chosen model
+    (account-scoped `upsert_voice_profile`/`delete_voice_profile` RPCs, `/settings`
+    editor) and falls back to the default when no row exists. The slice-1 v3
+    caption-leak limitation is resolved — `tokenizeSpokenWords` drops fully-bracketed
+    `[audio-tag]` tokens. (`is_fallback` left unused; resolution is exact-model-row →
+    code default.) The voice
     concurrency cap is a plain chunk of 5 (shared governor — Phase 9); seed uses a
     hardcoded default voice.
   - **Phase 5 deferrals carried forward:** the **channel-resource UI** is Phase 8 —
