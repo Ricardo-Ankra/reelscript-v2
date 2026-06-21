@@ -33,6 +33,9 @@ export default async function AppLayout({
           <Link href="/channels" className="text-sm opacity-70 hover:opacity-100">
             Channels
           </Link>
+          <Link href="/costs" className="text-sm opacity-70 hover:opacity-100">
+            Costs
+          </Link>
           <Link href="/settings" className="text-sm opacity-70 hover:opacity-100">
             Settings
           </Link>
