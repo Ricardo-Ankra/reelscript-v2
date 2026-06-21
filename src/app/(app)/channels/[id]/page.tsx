@@ -13,6 +13,7 @@ import { CaptionEmphasisEditor } from './CaptionEmphasisEditor';
 import { signedGetUrl } from '@/lib/r2';
 import { sanitizeLogos, type LogoSlot } from '@/lib/channels/logos';
 import { LogosEditor } from './LogosEditor';
+import { ResourcesEditor, type ResourceItem } from './ResourcesEditor';
 
 // Channel brand + caption-emphasis editors (Phase 8 slices 2–3). RLS scopes the
 // read; a miss (not found OR not owned) → 404. The parsers show current EFFECTIVE
@@ -51,6 +52,22 @@ export default async function ChannelDetailPage({
   const voiceInitial = parseVoiceTts(channel.voice_tts);
   const videoDefaultsInitial = parseVideoDefaults(channel.defaults);
 
+  const { data: resourceRows } = await supabase
+    .from('channel_resources')
+    .select('id, kind, r2_key, original_filename, description, tags, created_at')
+    .eq('channel_id', id)
+    .order('created_at', { ascending: false });
+  const resources: ResourceItem[] = await Promise.all(
+    (resourceRows ?? []).map(async (r) => ({
+      id: r.id as string,
+      kind: (r.kind as string) === 'video' ? ('video' as const) : ('image' as const),
+      description: (r.description as string | null) ?? '',
+      tags: (r.tags as string[] | null) ?? [],
+      filename: (r.original_filename as string | null) ?? '',
+      previewUrl: r.r2_key ? await signedGetUrl(r.r2_key as string, 60 * 60) : null,
+    })),
+  );
+
   return (
     <div className="space-y-8">
       <Link href="/channels" className="text-sm underline opacity-70 hover:opacity-100">
@@ -76,6 +93,10 @@ export default async function ChannelDetailPage({
       <hr className="border-black/10 dark:border-white/10" />
 
       <LogosEditor channelId={channel.id as string} initial={logos} initialPreviewUrls={logoPreviewUrls} />
+
+      <hr className="border-black/10 dark:border-white/10" />
+
+      <ResourcesEditor channelId={channel.id as string} initial={resources} />
 
       <hr className="border-black/10 dark:border-white/10" />
 
