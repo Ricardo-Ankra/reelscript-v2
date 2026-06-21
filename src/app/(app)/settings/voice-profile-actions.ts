@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { validateTagMappings } from '@/lib/voice/profile';
 import { listModels, type CatalogModel } from '@/lib/voice/elevenlabs';
+import { resolveProviderKey } from '@/lib/credentials/store';
 
 // Fetch the live ElevenLabs model catalog (on demand, like the channel voice editor).
 // Server action so the API key (server-only) never reaches the client — the client
@@ -11,7 +12,10 @@ export async function loadModelCatalog(): Promise<
   { ok: true; models: CatalogModel[] } | { ok: false; reason: string }
 > {
   try {
-    const models = await listModels();
+    const supabase = await createClient();
+    const { data: account } = await supabase.from('accounts').select('id').maybeSingle();
+    const key = account ? await resolveProviderKey(supabase, account.id as string, 'elevenlabs') : undefined;
+    const models = await listModels(key);
     return { ok: true, models };
   } catch {
     return { ok: false, reason: "Couldn't reach ElevenLabs — check the API key and try again." };
