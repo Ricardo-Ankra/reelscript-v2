@@ -15,7 +15,8 @@ export interface MusicPanelState {
   renderId?: string;
   trackId?: string | null;
   trackTitle?: string | null;
-  masterVolume?: number;
+  params?: MusicParams;
+  trackDurationSec?: number | null;
   tracks?: { id: string; title: string }[];
   status?: string;
 }
@@ -42,7 +43,7 @@ export async function getMusicPanel(videoId: string): Promise<MusicPanelState> {
 
   const { data: trackRows } = await supabase
     .from('music_tracks')
-    .select('id, title')
+    .select('id, title, duration_seconds')
     .eq('channel_id', channelId)
     .order('created_at');
   const tracks = (trackRows ?? []).map((t) => ({ id: t.id as string, title: (t.title as string) ?? 'Untitled' }));
@@ -50,12 +51,16 @@ export async function getMusicPanel(videoId: string): Promise<MusicPanelState> {
 
   const params = canonicalizeMusicParams((render.music_params as Partial<MusicParams>) ?? {});
   const currentId = (render.music_track_id as string | null) ?? null;
+  const currentRow = (trackRows ?? []).find((t) => (t.id as string) === currentId);
+  const trackDurationSec =
+    currentRow && currentRow.duration_seconds != null ? Number(currentRow.duration_seconds) : null;
   return {
     available: true,
     renderId,
     trackId: currentId,
     trackTitle: tracks.find((t) => t.id === currentId)?.title ?? null,
-    masterVolume: params.masterVolume,
+    params,
+    trackDurationSec,
     tracks,
     status: render.status as string,
   };
@@ -64,7 +69,7 @@ export async function getMusicPanel(videoId: string): Promise<MusicPanelState> {
 // Apply a music change to the current render and kick the audio-only re-mux.
 export async function applyMusic(
   renderId: string,
-  opts: { reroll?: boolean; masterVolume?: number },
+  opts: { reroll?: boolean; params?: Partial<MusicParams> },
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const supabase = await createClient();
 
@@ -98,8 +103,17 @@ export async function applyMusic(
 
   const params = canonicalizeMusicParams({
     ...((render.music_params as Partial<MusicParams>) ?? {}),
-    ...(opts.masterVolume !== undefined ? { masterVolume: opts.masterVolume } : {}),
+    ...(opts.params ?? {}),
   });
+
+  // Persist the tuning to the video FIRST (so a future re-render inherits it). Do
+  // this before flipping the render to 'encoding' so a settings-write failure can't
+  // strand the render mid-encode — the operator just retries.
+  const { error: sErr } = await supabase.rpc('merge_video_settings', {
+    p_video_id: videoId,
+    p_patch: { music_params: params },
+  });
+  if (sErr) return { ok: false, reason: sErr.message };
 
   const { error: upErr } = await supabase
     .from('renders')
