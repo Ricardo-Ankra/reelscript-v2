@@ -111,8 +111,18 @@ authoritative and the `docs/` copy remains the design record.
     Phase 8). ~~**Kinetic duration is uncapped** — a long emphasis word suppresses
     captions for its span~~ — **superseded by the 2026-06-16 caption emphasis revision**
     (single caption track, no kinetic span / suppression machinery).
-  - **Phase 3 deferrals carried forward:** ElevenLabs key is an **env var**
-    (`ELEVENLABS_API_KEY`), not `api_credentials` (Phase 8); ~~synthesis is
+  - **Phase 3 deferrals carried forward:** ~~ElevenLabs key is an **env var**
+    (`ELEVENLABS_API_KEY`), not `api_credentials` (Phase 8)~~ — **API credentials vault
+    shipped 2026-06-21**: per-account encrypted keys for **anthropic/elevenlabs/pexels/
+    pixabay** entered/validated on `/settings`, consumed by the pipeline with **env-var
+    fallback** (an account with no stored key is byte-identical to today). App-layer
+    **AES-256-GCM** (pure `src/lib/credentials/crypto.ts`), `store.ts` resolver/validators,
+    `anthropic(apiKey?)` per-account across all 8 call sites. **Decrypted keys never enter
+    Inngest step state** (resolved via plain awaits, never returned from a `step.run`).
+    openai/google excluded (no consumer). **Operator gate:** set `CREDENTIALS_ENCRYPTION_KEY`
+    (64 hex chars) in the deploy env before using stored keys — a `required()` getter that
+    degrades safely if unset (save shows a friendly error; resolve falls back to env).
+    Known V1 wart: a key marked `invalid` must be re-saved to re-test. ~~synthesis is
     fallback-only~~ — **emotion tags shipped 2026-06-21** (slice 1): the AI emits
     the 7-tag vocab sparingly and synthesis honors it via a **built-in model-aware
     profile** (`voice/profile.ts`; v2: strip + pause→SSML + scene-level
