@@ -112,8 +112,13 @@ authoritative and the `docs/` copy remains the design record.
     captions for its span~~ — **superseded by the 2026-06-16 caption emphasis revision**
     (single caption track, no kinetic span / suppression machinery).
   - **Phase 3 deferrals carried forward:** ElevenLabs key is an **env var**
-    (`ELEVENLABS_API_KEY`), not `api_credentials` (Phase 8); synthesis is
-    **fallback-only** (no per-model `voice_profiles` rows/UI — Phase 8); the voice
+    (`ELEVENLABS_API_KEY`), not `api_credentials` (Phase 8); ~~synthesis is
+    fallback-only~~ — **emotion tags shipped 2026-06-21** (slice 1): the AI emits
+    the 7-tag vocab sparingly and synthesis honors it via a **built-in model-aware
+    profile** (`voice/profile.ts`; v2: strip + pause→SSML + scene-level
+    `voice_settings` nudge; v3: inline audio tags). **The editable per-model
+    `voice_profiles` table/UI is still Phase 8 (slice 2)** — it will override the
+    built-in. The voice
     concurrency cap is a plain chunk of 5 (shared governor — Phase 9); seed uses a
     hardcoded default voice.
   - **Phase 5 deferrals carried forward:** the **channel-resource UI** is Phase 8 —
