@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { signedGetUrl } from '@/lib/r2';
 import { Editor, type SceneWithShots } from './Editor';
 import type { Shot } from './SceneCard';
 import { VideoCostsPanel } from './VideoCostsPanel';
@@ -96,6 +97,22 @@ export default async function VideoEditorPage({
     costUsd: Number(r.cost_usd ?? 0),
   }));
 
+  // Latest render for this video — so a previously-rendered video is watchable on
+  // re-open (and an in-flight render resumes its progress in the editor). A complete
+  // render gets a signed playback URL; an in-flight one passes id+status so the
+  // editor resumes polling. RLS scopes the read.
+  const { data: render } = await supabase
+    .from('renders')
+    .select('id, status, output_r2_key')
+    .eq('video_id', id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const initialRenderUrl =
+    render?.status === 'complete' && render.output_r2_key
+      ? await signedGetUrl(render.output_r2_key as string, 60 * 60)
+      : null;
+
   return (
     <div className="space-y-6">
       <Editor
@@ -106,6 +123,9 @@ export default async function VideoEditorPage({
         initialSettings={(video.settings as Record<string, unknown>) ?? {}}
         initialPrompt={(video.prompt as string | null) ?? ''}
         resources={resources}
+        initialRenderId={(render?.id as string | null) ?? null}
+        initialRenderStatus={(render?.status as string | null) ?? null}
+        initialRenderUrl={initialRenderUrl}
       />
       <VideoCostsPanel events={costEvents} />
     </div>

@@ -33,6 +33,9 @@ export function Editor({
   initialSettings,
   initialPrompt,
   resources,
+  initialRenderId = null,
+  initialRenderStatus = null,
+  initialRenderUrl = null,
 }: {
   videoId: string;
   title: string;
@@ -41,6 +44,9 @@ export function Editor({
   initialSettings: Record<string, unknown>;
   initialPrompt: string;
   resources: ResourceOption[];
+  initialRenderId?: string | null;
+  initialRenderStatus?: string | null;
+  initialRenderUrl?: string | null;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [scenes, setScenes] = useState<SceneWithShots[]>(initialScenes);
@@ -49,10 +55,12 @@ export function Editor({
   // Scene ids with synthesis in flight (set on click, cleared as audio lands or the
   // voice job ends). Drives the per-card "Synthesizing…" state.
   const [synthesizing, setSynthesizing] = useState<Set<string>>(new Set());
-  // Render state (Phase 4): the active render id + its polled status/output.
-  const [renderId, setRenderId] = useState<string | null>(null);
-  const [renderStatus, setRenderStatus] = useState<string | null>(null);
-  const [renderUrl, setRenderUrl] = useState<string | null>(null);
+  // Render state (Phase 4): the active render id + its polled status/output. Seeded
+  // from the latest render so a previously-rendered video is watchable on re-open and
+  // an in-flight render resumes polling (the poll effect no-ops on a complete seed).
+  const [renderId, setRenderId] = useState<string | null>(initialRenderId);
+  const [renderStatus, setRenderStatus] = useState<string | null>(initialRenderStatus);
+  const [renderUrl, setRenderUrl] = useState<string | null>(initialRenderUrl);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [renderElapsed, setRenderElapsed] = useState(0); // seconds, ticked while active
 
