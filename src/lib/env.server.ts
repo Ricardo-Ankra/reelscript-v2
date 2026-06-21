@@ -88,6 +88,14 @@ export const serverEnv = {
       return optional('PIXABAY_API_KEY');
     },
   },
+  // App-layer encryption key for stored provider credentials (Phase 8). 64 hex
+  // chars (32 bytes). Only read when the credentials feature is used — an account
+  // on env-var keys never needs it.
+  credentials: {
+    get encryptionKey() {
+      return required('CREDENTIALS_ENCRYPTION_KEY');
+    },
+  },
 };
 
 function optional(name: string): string | undefined {
