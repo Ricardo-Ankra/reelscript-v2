@@ -26,7 +26,7 @@ import {
 } from '@/lib/composition/compose';
 import { validateSpec, formatGate1Feedback, type Gate1Error } from '@/lib/composition/gate1';
 import type { CompositionSpec, AssetManifestEntry } from '@/lib/composition/spec';
-import { hasStockKeys, searchStock } from '@/lib/assets/search';
+import { searchStock, resolveStockKeys } from '@/lib/assets/search';
 import type { StockCandidate } from '@/lib/assets/candidate';
 import { resolveStockAssets, resolveResourceAssets, resourceAssetId } from '@/lib/assets/resolve';
 import { runGate2 } from '@/lib/composition/gate2';
@@ -111,9 +111,10 @@ export const renderVideo = inngest.createFunction(
         assets: [...brief.assets, ...resourceEntries],
       };
 
-      const useStock = hasStockKeys() && brief.needsStock;
+      const stockKeys = await resolveStockKeys(admin, brief.accountId);
+      const useStock = Boolean(stockKeys.pexels || stockKeys.pixabay) && brief.needsStock;
       let outcome = useStock
-        ? await agenticCompose(briefWithResources, admin, brief.accountId, models.video_composition)
+        ? await agenticCompose(briefWithResources, admin, brief.accountId, models.video_composition, stockKeys)
         : await proceduralCompose(briefWithResources, models.video_composition);
 
       // Degrade rather than hard-fail: an agentic path that can't produce a valid
@@ -707,6 +708,7 @@ async function agenticCompose(
   admin: ReturnType<typeof createAdminClient>,
   accountId: string,
   model: string,
+  stockKeys: { pexels?: string; pixabay?: string },
 ): Promise<ComposeOutcome> {
   let tokensIn = 0;
   let tokensOut = 0;
@@ -739,7 +741,7 @@ async function agenticCompose(
       },
       searchStock: async (params) => {
         searches += 1;
-        const candidates = await searchStock(admin, accountId, params);
+        const candidates = await searchStock(admin, accountId, params, stockKeys);
         // Embed thumbnails as base64 so the vision model never has to fetch a URL
         // itself (some provider CDNs block Anthropic's fetcher; empty URLs 400).
         return attachThumbnails(candidates);

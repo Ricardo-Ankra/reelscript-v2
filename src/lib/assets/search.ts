@@ -1,6 +1,7 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { serverEnv } from '../env.server';
+import { resolveProviderKey } from '../credentials/store';
 import { searchPexels } from './pexels';
 import { searchPixabay } from './pixabay';
 import { dedupeCandidates, searchCacheKey, type StockCandidate, type StockSearchParams } from './candidate';
@@ -13,6 +14,22 @@ export function hasStockKeys(): boolean {
   return Boolean(serverEnv.pexels.apiKey || serverEnv.pixabay.apiKey);
 }
 
+// Per-account stock keys: a stored credential (non-invalid) else the env var. Used to
+// decide whether stock is available AND which key each provider call uses.
+export async function resolveStockKeys(
+  client: SupabaseClient,
+  accountId: string,
+): Promise<{ pexels?: string; pixabay?: string }> {
+  const [pexels, pixabay] = await Promise.all([
+    resolveProviderKey(client, accountId, 'pexels'),
+    resolveProviderKey(client, accountId, 'pixabay'),
+  ]);
+  return {
+    pexels: pexels ?? serverEnv.pexels.apiKey,
+    pixabay: pixabay ?? serverEnv.pixabay.apiKey,
+  };
+}
+
 // Search both providers (those with keys), merge + dedupe, behind the 7-day
 // search-result cache (spec 13.6) so repeated/identical searches don't re-pay the
 // providers. A provider error degrades to that provider returning nothing.
@@ -20,6 +37,7 @@ export async function searchStock(
   admin: SupabaseClient,
   accountId: string,
   params: StockSearchParams,
+  keys: { pexels?: string; pixabay?: string },
 ): Promise<StockCandidate[]> {
   const queryHash = searchCacheKey({ ...params, source: 'stock' });
   const nowIso = new Date().toISOString();
@@ -35,8 +53,8 @@ export async function searchStock(
   }
 
   const [pex, pix] = await Promise.all([
-    searchPexels(params).catch(() => [] as StockCandidate[]),
-    searchPixabay(params).catch(() => [] as StockCandidate[]),
+    searchPexels(params, keys.pexels).catch(() => [] as StockCandidate[]),
+    searchPixabay(params, keys.pixabay).catch(() => [] as StockCandidate[]),
   ]);
   // Interleave so both providers are visible among the first candidates.
   const merged: StockCandidate[] = [];

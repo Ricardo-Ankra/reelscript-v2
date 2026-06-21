@@ -30,8 +30,8 @@ function pxOrientation(o?: string): string {
   return 'all';
 }
 
-export async function searchPixabay(params: StockSearchParams): Promise<StockCandidate[]> {
-  const key = serverEnv.pixabay.apiKey;
+export async function searchPixabay(params: StockSearchParams, apiKey?: string): Promise<StockCandidate[]> {
+  const key = apiKey ?? serverEnv.pixabay.apiKey;
   if (!key) return [];
   const q = new URLSearchParams({ key, q: params.query, per_page: String(PER_PAGE), safesearch: 'true' });
 
