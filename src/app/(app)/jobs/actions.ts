@@ -12,7 +12,7 @@ export async function loadJobs(): Promise<JobRow[]> {
   const { data } = await supabase
     .from('jobs')
     .select('id, type, status, phase, video_id, error, created_at, updated_at, videos(title)')
-    .or(`status.in.(queued,running,paused),updated_at.gte.${cutoff}`)
+    .or(`status.in.(${ACTIVE_JOB_STATUSES.join(',')}),updated_at.gte.${cutoff}`)
     .order('created_at', { ascending: false });
   return (data ?? []).map((r) => {
     const v = r.videos as { title?: string } | { title?: string }[] | null;
@@ -56,6 +56,7 @@ export async function cancelJob(
     .from('jobs')
     .select('id, type, status, render_id')
     .eq('id', jobId)
+    .eq('account_id', accountId)
     .maybeSingle();
   if (!job) return { ok: false, reason: 'Job not found.' };
   if (!isCancellable(job.status as string)) return { ok: false, reason: 'Job is not running.' };
