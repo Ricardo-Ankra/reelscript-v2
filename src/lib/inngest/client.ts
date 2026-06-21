@@ -61,4 +61,11 @@ export type PrimitiveDeployData = {
   version: number;
 };
 
+// jobs/cancel requests cancellation of an in-flight run by jobId. Each cancellable
+// function declares cancelOn matching this event on data.jobId; the cancel action
+// also marks the job row cancelled. accountId is carried for logging/parity. We use
+// the non-deprecated `if` expression form (event = the original trigger, async = the
+// cancel event); `match` is deprecated in this inngest version.
+export type JobCancelData = { jobId: string; accountId: string };
+
 export const inngest = new Inngest({ id: 'reelscript' });

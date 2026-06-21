@@ -12,6 +12,7 @@ export const deployPrimitive = inngest.createFunction(
     id: 'deploy-primitive',
     retries: 1,
     triggers: [{ event: 'primitive/deploy' }],
+    cancelOn: [{ event: 'jobs/cancel', if: 'async.data.jobId == event.data.jobId' }],
     onFailure: async ({ event, error }) => {
       const data = event.data.event.data as PrimitiveDeployData;
       const admin = createAdminClient();

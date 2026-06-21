@@ -28,6 +28,7 @@ export const synthesizeVoice = inngest.createFunction(
     id: 'synthesize-voice',
     retries: 2,
     triggers: [{ event: 'voice/synthesize' }],
+    cancelOn: [{ event: 'jobs/cancel', if: 'async.data.jobId == event.data.jobId' }],
     // After retries are exhausted, mark the job failed so the editor stops showing
     // "synthesizing" forever (Phase 1/2 lesson: surface failures). The full failure
     // taxonomy (quota-pause/resume, Retry-After) is Phase 9.

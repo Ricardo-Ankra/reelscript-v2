@@ -66,6 +66,7 @@ export const renderVideo = inngest.createFunction(
     id: 'render-video',
     retries: 2,
     triggers: [{ event: 'render/start' }],
+    cancelOn: [{ event: 'jobs/cancel', if: 'async.data.jobId == event.data.jobId' }],
     onFailure: async ({ event, error }) => {
       // Terminal failure: mark the render + job failed with the error preserved.
       // The snapshot revision and synthesized audio are never touched (spec 15.2).
