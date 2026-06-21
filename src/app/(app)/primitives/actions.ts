@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { inngest } from '@/lib/inngest/client';
 import { anthropic } from '@/lib/ai/anthropic';
 import { loadModelRouting } from '@/lib/ai/model-routing.server';
+import { resolveProviderKey } from '@/lib/credentials/store';
 import { buildDraftSystemPrompt, buildDraftUserPrompt, parseDraft } from '@/lib/ai/primitive-draft';
 import { runGates, type GateResult } from '@/lib/primitives/gates';
 import { lintPrimitive, formatLintFeedback } from '@/lib/primitives/lint';
@@ -41,6 +42,7 @@ export async function draftPrimitive(input: {
   const supabase = await createClient();
   const accountId = await requireAccountId(supabase);
   const models = await loadModelRouting(supabase, accountId);
+  const anthropicKey = await resolveProviderKey(supabase, accountId, 'anthropic');
   const userText = buildDraftUserPrompt(input);
   // When a failing frame is provided (bounded auto-fix, spec 9.6.1), show it to the AI.
   const frame = input.failingFrameDataUrl ? parseDataUrl(input.failingFrameDataUrl) : null;
@@ -50,7 +52,7 @@ export async function draftPrimitive(input: {
         { type: 'text' as const, text: userText },
       ]
     : userText;
-  const msg = await anthropic().messages.create({
+  const msg = await anthropic(anthropicKey).messages.create({
     model: models.primitive_drafting,
     max_tokens: 16000,
     system: buildDraftSystemPrompt(),
@@ -73,7 +75,8 @@ export async function runPrimitiveGates(input: { code: string; propSchema: PropS
   const supabase = await createClient();
   const accountId = await requireAccountId(supabase);
   const models = await loadModelRouting(supabase, accountId);
-  const out = await runGates({ ...input, model: models.video_composition });
+  const anthropicKey = await resolveProviderKey(supabase, accountId, 'anthropic');
+  const out = await runGates({ ...input, model: models.video_composition, apiKey: anthropicKey });
   let frameDataUrl: string | undefined;
   if (out.frameUrl) {
     try {

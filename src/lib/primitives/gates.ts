@@ -45,6 +45,8 @@ export async function runGates(input: {
   brandPrompt?: (stressName: string) => string;
   // Optional model override for the brand-gate vision call. Defaults to COMPOSITION_MODEL.
   model?: string;
+  // Optional per-account Anthropic key; falls back to env singleton when absent.
+  apiKey?: string;
 }): Promise<GatesOutcome> {
   const gates: GateResult[] = [];
 
@@ -87,7 +89,7 @@ export async function runGates(input: {
     // overflowing text + vision-check each for overflow/clipping/clash (spec 9.6).
     let brand: { result: GateResult; frameUrl?: string };
     try {
-      brand = await runBrandGate(site.serveUrl, input.propSchema, input.brandPrompt ?? buildBrandQaPrompt, input.model);
+      brand = await runBrandGate(site.serveUrl, input.propSchema, input.brandPrompt ?? buildBrandQaPrompt, input.model, input.apiKey);
     } catch (e) {
       gates.push({ gate: 'brand', passed: false, reason: `Render error under the stress kit: ${(e as Error).message.slice(0, 500)}` });
       return { passed: false, gates, frameUrl: still.frameUrl };
@@ -106,6 +108,7 @@ async function runBrandGate(
   schema: PropSchema,
   brandPrompt: (stressName: string) => string,
   model?: string,
+  apiKey?: string,
 ): Promise<{ result: GateResult; frameUrl?: string }> {
   const props = stressProps(schema);
   for (const { name, theme } of STRESS_THEMES) {
@@ -113,7 +116,7 @@ async function runBrandGate(
     if (still.blank) {
       return { result: { gate: 'brand', passed: false, reason: `Blank under the "${name}" stress kit.` }, frameUrl: still.frameUrl };
     }
-    const verdict = await visionQa(still.frameUrl, brandPrompt(name), model);
+    const verdict = await visionQa(still.frameUrl, brandPrompt(name), model, apiKey);
     if (verdict && !verdict.pass) {
       return {
         result: { gate: 'brand', passed: false, reason: `Failed the "${name}" stress kit: ${verdict.issues.join('; ') || 'overflow/clipping'}` },
@@ -126,11 +129,11 @@ async function runBrandGate(
 
 // One Claude-vision QA pass on a rendered frame (download → base64 → vision). An
 // unparseable verdict passes by default (don't fail an authoring run on a parser hiccup).
-async function visionQa(frameUrl: string, prompt: string, model?: string): Promise<{ pass: boolean; issues: string[] } | null> {
+async function visionQa(frameUrl: string, prompt: string, model?: string, apiKey?: string): Promise<{ pass: boolean; issues: string[] } | null> {
   const res = await fetch(frameUrl);
   if (!res.ok) return null;
   const b64 = Buffer.from(await res.arrayBuffer()).toString('base64');
-  const msg = await anthropic().messages.create({
+  const msg = await anthropic(apiKey).messages.create({
     model: model ?? COMPOSITION_MODEL,
     max_tokens: 1024,
     messages: [

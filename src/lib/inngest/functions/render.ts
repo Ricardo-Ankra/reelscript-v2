@@ -42,6 +42,7 @@ import { canonicalizeMusicParams, type MusicParams } from '@/lib/music/params';
 import type { TtsAlignment } from '@/lib/voice/alignment';
 import { loadComposeRegistry } from '@/lib/primitives/registry-load';
 import { stripEmotionTags } from '@/lib/voice/profile';
+import { resolveProviderKey } from '@/lib/credentials/store';
 
 // =============================================================================
 // Phase 4 — the render pipeline (spec 13.1). One function: compose → gate1 →
@@ -111,16 +112,17 @@ export const renderVideo = inngest.createFunction(
         assets: [...brief.assets, ...resourceEntries],
       };
 
+      const anthropicKey = await resolveProviderKey(admin, brief.accountId, 'anthropic');
       const stockKeys = await resolveStockKeys(admin, brief.accountId);
       const useStock = Boolean(stockKeys.pexels || stockKeys.pixabay) && brief.needsStock;
       let outcome = useStock
-        ? await agenticCompose(briefWithResources, admin, brief.accountId, models.video_composition, stockKeys)
-        : await proceduralCompose(briefWithResources, models.video_composition);
+        ? await agenticCompose(briefWithResources, admin, brief.accountId, models.video_composition, stockKeys, anthropicKey)
+        : await proceduralCompose(briefWithResources, models.video_composition, anthropicKey);
 
       // Degrade rather than hard-fail: an agentic path that can't produce a valid
       // stock composition falls back to one procedural pass (spec 8.9).
       if (!outcome.ok && useStock) {
-        const fb = await proceduralCompose(briefWithResources, models.video_composition);
+        const fb = await proceduralCompose(briefWithResources, models.video_composition, anthropicKey);
         outcome = {
           ...fb,
           tokensIn: outcome.tokensIn + fb.tokensIn,
@@ -159,6 +161,7 @@ export const renderVideo = inngest.createFunction(
                   sceneScript: stripEmotionTags(ci.narration),
                   density: brief.captionEmphasisDensity,
                   model: models.caption_emphasis,
+                  apiKey: anthropicKey,
                 });
           const chunks = buildCaptionChunks(tokenizeSpokenWords(ci.alignment), emphasis, {
             fps: brief.metadata.fps,
@@ -241,6 +244,10 @@ export const renderVideo = inngest.createFunction(
     // one Claude-vision pass. A fail marks the render failed with the frame URL
     // preserved (no auto-fix loop — that's Phase 7).
     const gate2 = await step.run('gate2', async () => {
+      const { data: rrow } = await admin.from('renders').select('account_id').eq('id', renderId).single();
+      const gate2Key = rrow?.account_id
+        ? await resolveProviderKey(admin, rrow.account_id as string, 'anthropic')
+        : undefined;
       const specUrl = await signedGetUrl(renderSpecKey, 60 * 60);
       const midFrame = Math.floor(durableSpec.metadata.durationInFrames / 2);
       const result = await runGate2({
@@ -251,6 +258,7 @@ export const renderVideo = inngest.createFunction(
         midFrame,
         sceneIntent: composed.midSceneIntent,
         model: composed.videoModel,
+        apiKey: gate2Key,
       });
       const visionUsd =
         (result.tokensIn / 1_000_000) * SONNET_USD_PER_1M_IN +
@@ -654,7 +662,7 @@ type ComposeOutcome = {
 // The Phase-4 procedural path: one Sonnet call (no tools), parse → assemble →
 // Gate 1, with budget-2 validate-and-retry. brief already carries every resolved
 // asset (audio + any pre-resolved resources).
-async function proceduralCompose(brief: CompositionBrief, model: string): Promise<ComposeOutcome> {
+async function proceduralCompose(brief: CompositionBrief, model: string, apiKey?: string): Promise<ComposeOutcome> {
   const system = buildCompositionSystemPrompt(brief.registry); // stock off; registry threaded
   const messages: { role: 'user' | 'assistant'; content: string }[] = [
     { role: 'user', content: buildCompositionUserPrompt(brief) },
@@ -666,7 +674,7 @@ async function proceduralCompose(brief: CompositionBrief, model: string): Promis
   for (let attempt = 0; attempt <= GATE1_RETRY_BUDGET; attempt++) {
     // 32k headroom: adaptive thinking counts against max_tokens; effort 'medium'
     // reins in over-thinking on what is a structured arrangement task.
-    const stream = anthropic().messages.stream({
+    const stream = anthropic(apiKey).messages.stream({
       model,
       max_tokens: 32000,
       thinking: { type: 'adaptive' },
@@ -709,6 +717,7 @@ async function agenticCompose(
   accountId: string,
   model: string,
   stockKeys: { pexels?: string; pixabay?: string },
+  apiKey?: string,
 ): Promise<ComposeOutcome> {
   let tokensIn = 0;
   let tokensOut = 0;
@@ -720,7 +729,7 @@ async function agenticCompose(
     const result = await runAgenticComposition(brief, {
       feedback,
       callModel: async (system, msgs) => {
-        const stream = anthropic().messages.stream({
+        const stream = anthropic(apiKey).messages.stream({
           model,
           max_tokens: 32000,
           thinking: { type: 'adaptive' },

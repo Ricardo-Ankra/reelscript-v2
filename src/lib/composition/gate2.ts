@@ -17,6 +17,7 @@ export interface Gate2Params {
   midFrame: number; // frame to sample (caller computes durationInFrames/2)
   sceneIntent: string; // narration / shot intent for the scene at the mid frame
   model: string;
+  apiKey?: string;
 }
 
 export interface Gate2Result {
@@ -58,7 +59,7 @@ export async function runGate2(params: Gate2Params): Promise<Gate2Result> {
   if (!res.ok) throw new Error(`fetch smoke frame: ${res.status}`);
   const b64 = Buffer.from(await res.arrayBuffer()).toString('base64');
 
-  const msg = await anthropic().messages.create({
+  const msg = await anthropic(params.apiKey).messages.create({
     model: params.model,
     max_tokens: 1024,
     messages: [
