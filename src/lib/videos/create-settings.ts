@@ -8,6 +8,7 @@ import {
   parseVideoSettings,
   sanitizeSettingsPatch,
   type VideoSettings,
+  SETTINGS_DEFAULTS,
 } from './settings';
 import { MIN_TARGET_LENGTH, MAX_TARGET_LENGTH } from './regenerate';
 
@@ -16,9 +17,16 @@ export type CreateOptions = VideoSettings;
 
 // Read the full option set from channels.defaults, backfilling SETTINGS_DEFAULTS per
 // missing/invalid key. channels.defaults uses the identical snake_case keys, so this
-// reuses parseVideoSettings (DRY).
+// reuses parseVideoSettings (DRY). Validates target_length against bounds, falling back
+// to SETTINGS_DEFAULTS.target_length if out-of-range or non-integer.
 export function parseChannelCreateOptions(defaults: unknown): CreateOptions {
-  return parseVideoSettings(defaults);
+  const parsed = parseVideoSettings(defaults);
+  const tl = parsed.target_length;
+  const target_length =
+    Number.isInteger(tl) && tl >= MIN_TARGET_LENGTH && tl <= MAX_TARGET_LENGTH
+      ? tl
+      : SETTINGS_DEFAULTS.target_length;
+  return { ...parsed, target_length };
 }
 
 // Overlay a loosely-typed per-video override onto a base, re-validating every key:

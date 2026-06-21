@@ -34,6 +34,13 @@ test('parseChannelCreateOptions: invalid single key falls back to its default', 
   assert.equal(out.target_length, SETTINGS_DEFAULTS.target_length);
 });
 
+test('parseChannelCreateOptions: out-of-bounds / non-integer target_length → fallback', () => {
+  assert.equal(parseChannelCreateOptions({ target_length: 3 }).target_length, SETTINGS_DEFAULTS.target_length);
+  assert.equal(parseChannelCreateOptions({ target_length: 12.5 }).target_length, SETTINGS_DEFAULTS.target_length);
+  assert.equal(parseChannelCreateOptions({ target_length: 500 }).target_length, SETTINGS_DEFAULTS.target_length);
+  assert.equal(parseChannelCreateOptions({ target_length: 45 }).target_length, 45);
+});
+
 test('mergeCreateSettings: valid override wins per key', () => {
   const base = { ...SETTINGS_DEFAULTS };
   const out = mergeCreateSettings(base, {
