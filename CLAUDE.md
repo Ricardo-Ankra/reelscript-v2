@@ -140,7 +140,14 @@ authoritative and the `docs/` copy remains the design record.
   - **Phase 4 deferrals carried forward:** Captions / kinetic text / music + remux
     are Phase 6 (the attribution overlay shipped in Phase 5).
     ~~`model_routing` is Phase 8 (Sonnet pinned in code)~~ — **model routing shipped
-    2026-06-18**: composition defaults to Sonnet but is operator-routable per task. The **render idempotency
+    2026-06-18**: composition defaults to Sonnet but is operator-routable per task. The
+    **cost ledger UI shipped 2026-06-21**: recorded `cost_events` are surfaced as a
+    per-video lifetime total + per-render/per-operation breakdown on the video page and
+    an account-level `/costs` rollup (pure `src/lib/costs/aggregate.ts` over RLS-scoped
+    reads; the security-definer `video_costs`/`render_costs` views are bypassed). Figures
+    are labeled **"Estimated"** — the **cost accounting itself is still Sonnet-pinned**
+    (a non-Sonnet `video_composition` route bills at Sonnet rates) and a few ops
+    (thumbnails) aren't metered yet; correcting the accounting is a separate item. The **render idempotency
     key is `hash(script_revision_id)`** (composition is non-deterministic), reused
     only for in-flight renders. The composition spec exists as a **durable
     key-based record** + an **ephemeral signed render-time copy** (sign at
