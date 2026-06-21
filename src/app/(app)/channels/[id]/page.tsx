@@ -14,16 +14,23 @@ import { signedGetUrl } from '@/lib/r2';
 import { sanitizeLogos, type LogoSlot } from '@/lib/channels/logos';
 import { LogosEditor } from './LogosEditor';
 import { ResourcesEditor, type ResourceItem } from './ResourcesEditor';
+import { ChannelTabs } from './ChannelTabs';
+import { deriveVideoStatus } from '@/lib/videos/status';
 
-// Channel brand + caption-emphasis editors (Phase 8 slices 2–3). RLS scopes the
-// read; a miss (not found OR not owned) → 404. The parsers show current EFFECTIVE
-// values; the two sections save independently.
+// Tabbed channel page. Videos (default) lists this channel's videos with a derived
+// status + the sole "New video" entry; Settings holds the six brand/format editors.
+// RLS scopes every read; a miss (not found OR not owned) → 404.
 export default async function ChannelDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
   const { id } = await params;
+  const { tab } = await searchParams;
+  const active: 'videos' | 'settings' = tab === 'settings' ? 'settings' : 'videos';
+
   const supabase = await createClient();
   const { data: channel } = await supabase
     .from('channels')
@@ -32,6 +39,133 @@ export default async function ChannelDetailPage({
     .maybeSingle();
 
   if (!channel) notFound();
+
+  return (
+    <div className="space-y-8">
+      <Link href="/" className="text-sm underline opacity-70 hover:opacity-100">
+        ← Home
+      </Link>
+      <div>
+        <h1 className="text-2xl font-semibold">{channel.name as string}</h1>
+        <p className="text-sm opacity-70">
+          Brand identity — colours, font, motion, voice, and video defaults.
+        </p>
+      </div>
+
+      <ChannelTabs channelId={channel.id as string} active={active} />
+
+      {active === 'videos' ? (
+        <VideosTab channelId={channel.id as string} supabase={supabase} />
+      ) : (
+        <SettingsTab channel={channel} />
+      )}
+    </div>
+  );
+}
+
+// --- Videos tab -------------------------------------------------------------
+
+async function VideosTab({
+  channelId,
+  supabase,
+}: {
+  channelId: string;
+  supabase: Awaited<ReturnType<typeof createClient>>;
+}) {
+  const { data: videoRows } = await supabase
+    .from('videos')
+    .select('id, title, created_at')
+    .eq('channel_id', channelId)
+    .order('created_at', { ascending: false });
+  const videos = videoRows ?? [];
+  const ids = videos.map((v) => v.id as string);
+
+  // Latest script_generation job + latest render + scene presence per video (rows are
+  // ordered desc; first seen per video_id is the latest). All RLS-scoped.
+  const latestJob = new Map<string, string>();
+  const latestRender = new Map<string, string>();
+  const hasScenes = new Set<string>();
+  if (ids.length) {
+    const { data: jobRows } = await supabase
+      .from('jobs')
+      .select('video_id, status, created_at')
+      .in('video_id', ids)
+      .eq('type', 'script_generation')
+      .order('created_at', { ascending: false });
+    for (const j of jobRows ?? []) {
+      const v = j.video_id as string;
+      if (!latestJob.has(v)) latestJob.set(v, j.status as string);
+    }
+    const { data: renderRows } = await supabase
+      .from('renders')
+      .select('video_id, status, created_at')
+      .in('video_id', ids)
+      .order('created_at', { ascending: false });
+    for (const r of renderRows ?? []) {
+      const v = r.video_id as string;
+      if (!latestRender.has(v)) latestRender.set(v, r.status as string);
+    }
+    const { data: sceneRows } = await supabase
+      .from('scenes')
+      .select('video_id')
+      .in('video_id', ids);
+    for (const s of sceneRows ?? []) hasScenes.add(s.video_id as string);
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Videos</h2>
+        <Link
+          href={`/videos/new?channel=${channelId}`}
+          className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background"
+        >
+          + New video
+        </Link>
+      </div>
+
+      {videos.length === 0 ? (
+        <p className="text-sm opacity-70">No videos yet — create your first.</p>
+      ) : (
+        <ul className="divide-y divide-black/10 rounded-lg border border-black/10 dark:divide-white/10 dark:border-white/10">
+          {videos.map((v) => {
+            const vid = v.id as string;
+            const { label } = deriveVideoStatus({
+              scriptJobStatus: latestJob.get(vid) ?? null,
+              hasScenes: hasScenes.has(vid),
+              latestRenderStatus: latestRender.get(vid) ?? null,
+            });
+            const created = new Date(v.created_at as string).toLocaleDateString();
+            return (
+              <li key={vid}>
+                <Link
+                  href={`/videos/${vid}`}
+                  className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-black/5 dark:hover:bg-white/5"
+                >
+                  <span className="min-w-0 flex-1 truncate font-medium">{v.title as string}</span>
+                  <span className="shrink-0 rounded-full border border-black/15 px-2 py-0.5 text-xs opacity-70 dark:border-white/15">
+                    {label}
+                  </span>
+                  <span className="shrink-0 opacity-50">{created}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// --- Settings tab (the existing six editors, unchanged) ---------------------
+
+async function SettingsTab({
+  channel,
+}: {
+  channel: { id: string; name: string; brand_kit: unknown; brand_voice: unknown; defaults: unknown; voice_tts: unknown };
+}) {
+  const id = channel.id as string;
+  const supabase = await createClient();
 
   const initial = parseChannelBrand({
     name: channel.name as string,
@@ -70,41 +204,22 @@ export default async function ChannelDetailPage({
 
   return (
     <div className="space-y-8">
-      <Link href="/channels" className="text-sm underline opacity-70 hover:opacity-100">
-        ← Channels
-      </Link>
-      <div>
-        <h1 className="text-2xl font-semibold">{channel.name as string}</h1>
-        <p className="text-sm opacity-70">
-          Brand identity — colours, font, motion, voice, and video defaults.
-        </p>
-      </div>
-      <BrandEditor channelId={channel.id as string} initial={initial} />
-
+      <BrandEditor channelId={id} initial={initial} />
       <hr className="border-black/10 dark:border-white/10" />
-
       <CaptionEmphasisEditor
-        channelId={channel.id as string}
+        channelId={id}
         initial={emphasisInitial}
         fonts={theme.fonts}
         followColors={defaultToneColors(theme)}
       />
-
       <hr className="border-black/10 dark:border-white/10" />
-
-      <LogosEditor channelId={channel.id as string} initial={logos} initialPreviewUrls={logoPreviewUrls} />
-
+      <LogosEditor channelId={id} initial={logos} initialPreviewUrls={logoPreviewUrls} />
       <hr className="border-black/10 dark:border-white/10" />
-
-      <ResourcesEditor channelId={channel.id as string} initial={resources} />
-
+      <ResourcesEditor channelId={id} initial={resources} />
       <hr className="border-black/10 dark:border-white/10" />
-
-      <VoiceEditor channelId={channel.id as string} initial={voiceInitial} />
-
+      <VoiceEditor channelId={id} initial={voiceInitial} />
       <hr className="border-black/10 dark:border-white/10" />
-
-      <VideoDefaultsEditor channelId={channel.id as string} initial={videoDefaultsInitial} />
+      <VideoDefaultsEditor channelId={id} initial={videoDefaultsInitial} />
     </div>
   );
 }

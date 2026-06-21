@@ -2,12 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { inngest } from '@/lib/inngest/client';
-import {
-  DEFAULT_VIDEO_CONFIG,
-  type VideoConfig,
-  type BrandContext,
-} from '@/lib/ai/script-generation';
-import { parseVideoDefaults } from '@/lib/channels/video-defaults';
+import type { VideoConfig, BrandContext } from '@/lib/ai/script-generation';
+import { parseChannelCreateOptions, mergeCreateSettings } from '@/lib/videos/create-settings';
 
 // Prompt + chosen channel → new video → generation job. Returns the video id so
 // the caller can open the editor, where scenes stream in over Realtime. The
@@ -15,6 +11,7 @@ import { parseVideoDefaults } from '@/lib/channels/video-defaults';
 export async function startScriptGeneration(
   prompt: string,
   channelId: string,
+  settings?: unknown,
 ): Promise<{ videoId: string; jobId: string }> {
   const trimmed = prompt.trim();
   if (!trimmed) throw new Error('Enter a prompt.');
@@ -46,15 +43,18 @@ export async function startScriptGeneration(
   if (!channel) throw new Error('Channel not found.');
   const tone = (channel.brand_voice as { tone?: string } | null)?.tone;
 
-  // Snapshot the channel's video-format defaults into the new video; captions/music
-  // stay on code defaults (channel inheritance for those is out of scope here).
-  const fmt = parseVideoDefaults(channel.defaults);
+  // Seed = the channel's full stored defaults (format keys + captions/density/music)
+  // overlaid with this video's per-key overrides. Reading the channel defaults fixes
+  // the prior bug where captions/music were hardcoded and density was omitted.
+  const base = parseChannelCreateOptions(channel.defaults);
+  const seed = mergeCreateSettings(base, settings);
   const seedSettings = {
-    aspect_ratio: fmt.aspectRatio,
-    target_length: fmt.targetLength,
-    fps: fmt.fps,
-    captions_on: DEFAULT_VIDEO_CONFIG.captions,
-    music_on: DEFAULT_VIDEO_CONFIG.music,
+    aspect_ratio: seed.aspect_ratio,
+    target_length: seed.target_length,
+    fps: seed.fps,
+    captions_on: seed.captions_on,
+    caption_emphasis_density: seed.caption_emphasis_density,
+    music_on: seed.music_on,
   };
 
   // Create the video with config baked into settings (written once).
@@ -92,11 +92,11 @@ export async function startScriptGeneration(
   const jobId = createdJob.data.id as string;
 
   const config: VideoConfig = {
-    aspectRatio: seedSettings.aspect_ratio,
-    targetLengthSeconds: seedSettings.target_length,
-    fps: seedSettings.fps,
-    captions: seedSettings.captions_on,
-    music: seedSettings.music_on,
+    aspectRatio: seed.aspect_ratio,
+    targetLengthSeconds: seed.target_length,
+    fps: seed.fps,
+    captions: seed.captions_on,
+    music: seed.music_on,
   };
   const brand: BrandContext = { channelName: channel.name as string, tone };
 

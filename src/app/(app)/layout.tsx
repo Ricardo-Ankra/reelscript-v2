@@ -24,20 +24,20 @@ export default async function AppLayout({
     <div className="flex min-h-full flex-1 flex-col">
       <header className="flex items-center justify-between border-b border-black/10 px-6 py-3 dark:border-white/10">
         <nav className="flex items-center gap-4">
-          <Link href="/dashboard" className="font-semibold">
+          <Link href="/" className="font-semibold">
             Reelscript
           </Link>
-          <Link href="/primitives" className="text-sm opacity-70 hover:opacity-100">
-            Primitives
-          </Link>
-          <Link href="/channels" className="text-sm opacity-70 hover:opacity-100">
-            Channels
+          <Link href="/" className="text-sm opacity-70 hover:opacity-100">
+            Home
           </Link>
           <Link href="/costs" className="text-sm opacity-70 hover:opacity-100">
             Costs
           </Link>
           <Link href="/settings" className="text-sm opacity-70 hover:opacity-100">
             Settings
+          </Link>
+          <Link href="/primitives" className="text-sm opacity-70 hover:opacity-100">
+            Primitives
           </Link>
         </nav>
         <div className="flex items-center gap-4 text-sm">
