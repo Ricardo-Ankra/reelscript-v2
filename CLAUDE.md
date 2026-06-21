@@ -91,8 +91,8 @@ authoritative and the `docs/` copy remains the design record.
     bundle); flagged in `bundle.ts`. Re-bundle **overwrites the single site** (`reelscript`)
     — **in-flight render pinning is deferred** (renders are quick + single-operator).
     The **compile gate = esbuild bundle-success** (not a full `tsc` type-check). The
-    **code editor is a textarea** (no Monaco). Primitive drafting is pinned to **Opus**
-    (`model_routing` is Phase 8). The **studio UI's browser interaction pass** (watching
+    **code editor is a textarea** (no Monaco). Primitive drafting defaulted to **Opus**
+    (now operator-routable — **`model_routing` shipped 2026-06-18**). The **studio UI's browser interaction pass** (watching
     auto-fix retry live) is the operator's manual review; the backend it drives is proven.
   - **Phase 6 deferrals carried forward:** ~~aspect-ratio / FPS / target-length
     controls~~ **shipped** — per-video on `VideoSettingsPanel`, and channel-level
@@ -126,7 +126,8 @@ authoritative and the `docs/` copy remains the design record.
     Gate-2 has **no auto-fix loop** (Phase 7) — it surfaces the failing frame only.
   - **Phase 4 deferrals carried forward:** Captions / kinetic text / music + remux
     are Phase 6 (the attribution overlay shipped in Phase 5).
-    `model_routing` is Phase 8 (Sonnet pinned in code). The **render idempotency
+    ~~`model_routing` is Phase 8 (Sonnet pinned in code)~~ — **model routing shipped
+    2026-06-18**: composition defaults to Sonnet but is operator-routable per task. The **render idempotency
     key is `hash(script_revision_id)`** (composition is non-deterministic), reused
     only for in-flight renders. The composition spec exists as a **durable
     key-based record** + an **ephemeral signed render-time copy** (sign at
