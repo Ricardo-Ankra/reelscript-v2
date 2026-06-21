@@ -30,6 +30,7 @@ export function decryptSecret(payload: string, keyHex: string): string {
   const ciphertext = Buffer.from(ctB64, 'base64');
   const tag = Buffer.from(tagB64, 'base64');
   if (iv.length !== IV_BYTES) throw new Error('Malformed encrypted payload (iv).');
+  if (tag.length !== 16) throw new Error('Malformed encrypted payload (tag).');
   const decipher = createDecipheriv(ALGO, keyBuffer(keyHex), iv);
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');

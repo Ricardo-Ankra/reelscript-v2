@@ -35,3 +35,11 @@ test('decryptSecret: wrong key throws', () => {
   const enc = encryptSecret('secret', KEY);
   assert.throws(() => decryptSecret(enc, 'f'.repeat(64)));
 });
+
+test('decryptSecret: throws on a wrong-length auth tag', () => {
+  const enc = encryptSecret('secret', KEY);
+  const [iv, ct] = enc.split('.');
+  // A 4-byte (not 16-byte) tag, base64-encoded.
+  const shortTag = Buffer.from([1, 2, 3, 4]).toString('base64');
+  assert.throws(() => decryptSecret([iv, ct, shortTag].join('.'), KEY));
+});
