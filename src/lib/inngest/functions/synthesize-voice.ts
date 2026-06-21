@@ -4,6 +4,7 @@ import { putObject } from '@/lib/r2';
 import { applyStoredProfile, defaultTagMappings, type TagMappings } from '@/lib/voice/profile';
 import { estimateUsd } from '@/lib/voice/estimate';
 import { synthesize } from '@/lib/voice/elevenlabs';
+import { resolveProviderKey } from '@/lib/credentials/store';
 
 // Voice synthesis (Phase 3, spec 6.4): synthesize each scene's narration to audio
 // in R2, capture the character timings, and run the audio_status lifecycle. The
@@ -68,6 +69,10 @@ export const synthesizeVoice = inngest.createFunction(
       return (data?.tag_mappings as TagMappings) ?? defaultTagMappings(voice.modelId ?? '');
     })) as TagMappings;
 
+    // Resolve the account's ElevenLabs key once (plain await — NOT a step.run, so the
+    // decrypted key never lands in Inngest step state). undefined → env fallback.
+    const elevenLabsKey = await resolveProviderKey(admin, accountId, 'elevenlabs');
+
     // Chunks of five = the concurrency cap. Each scene is a durable checkpoint.
     for (let i = 0; i < sceneIds.length; i += CONCURRENCY_CAP) {
       const chunk = sceneIds.slice(i, i + CONCURRENCY_CAP);
@@ -92,6 +97,7 @@ export const synthesizeVoice = inngest.createFunction(
               voiceId: voice.voiceId,
               modelId: voice.modelId,
               voiceSettings: settings,
+              apiKey: elevenLabsKey,
             });
 
             // Stable key: re-synthesis overwrites in place (signed URLs change per

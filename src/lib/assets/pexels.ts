@@ -35,8 +35,8 @@ type PexelsVideo = {
   video_files: PexelsVideoFile[];
 };
 
-export async function searchPexels(params: StockSearchParams): Promise<StockCandidate[]> {
-  const key = serverEnv.pexels.apiKey;
+export async function searchPexels(params: StockSearchParams, apiKey?: string): Promise<StockCandidate[]> {
+  const key = apiKey ?? serverEnv.pexels.apiKey;
   if (!key) return [];
   const q = new URLSearchParams({ query: params.query, per_page: String(PER_PAGE) });
   if (params.orientation) q.set('orientation', params.orientation);

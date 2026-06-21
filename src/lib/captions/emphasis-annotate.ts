@@ -24,12 +24,13 @@ export async function annotateSceneEmphasis(input: {
   sceneScript: string;
   density: EmphasisDensity;
   model: string;
+  apiKey?: string;
 }): Promise<WordEmphasis[]> {
   const words = tokenizeSpokenWords(input.alignment);
   if (words.length === 0) return [];
 
   try {
-    const msg = await anthropic().messages.create({
+    const msg = await anthropic(input.apiKey).messages.create({
       model: input.model,
       max_tokens: 1024,
       system: buildEmphasisSystemPrompt(),

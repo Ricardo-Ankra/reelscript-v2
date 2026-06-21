@@ -8,6 +8,7 @@ import {
   type CatalogVoice,
   type CatalogModel,
 } from '@/lib/voice/elevenlabs';
+import { resolveProviderKey } from '@/lib/credentials/store';
 
 // Fetch the live ElevenLabs voice + model catalog. Server action so the API key
 // (server-only) never reaches the client — the client gets only { id, name }[].
@@ -16,7 +17,10 @@ export async function loadVoiceCatalog(): Promise<
   { ok: true; voices: CatalogVoice[]; models: CatalogModel[] } | { ok: false; reason: string }
 > {
   try {
-    const [voices, models] = await Promise.all([listVoices(), listModels()]);
+    const supabase = await createClient();
+    const { data: account } = await supabase.from('accounts').select('id').maybeSingle();
+    const key = account ? await resolveProviderKey(supabase, account.id as string, 'elevenlabs') : undefined;
+    const [voices, models] = await Promise.all([listVoices(key), listModels(key)]);
     return { ok: true, voices, models };
   } catch {
     return { ok: false, reason: "Couldn't reach ElevenLabs — check the API key and try again." };

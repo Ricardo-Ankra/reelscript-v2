@@ -33,6 +33,7 @@ export type SynthesizeParams = {
   voiceId: string;
   modelId?: string;
   voiceSettings?: VoiceSettings;
+  apiKey?: string;
 };
 
 export type SynthesisResult = {
@@ -42,14 +43,15 @@ export type SynthesisResult = {
 };
 
 export async function synthesize(params: SynthesizeParams): Promise<SynthesisResult> {
-  const { text, voiceId, modelId = ELEVENLABS_DEFAULT_MODEL, voiceSettings } = params;
+  const { text, voiceId, modelId = ELEVENLABS_DEFAULT_MODEL, voiceSettings, apiKey } = params;
+  const key = apiKey ?? serverEnv.elevenlabs.apiKey;
 
   const res = await fetch(
     `${ELEVENLABS_BASE}/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps`,
     {
       method: 'POST',
       headers: {
-        'xi-api-key': serverEnv.elevenlabs.apiKey,
+        'xi-api-key': key,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -75,9 +77,9 @@ export type CatalogModel = { id: string; name: string };
 // GET /v1/voices → the account's available voices, mapped to { id, name }.
 // Server-only (uses the xi-api-key). A non-2xx throws (same posture as synthesize);
 // the loadVoiceCatalog action catches it.
-export async function listVoices(): Promise<CatalogVoice[]> {
+export async function listVoices(apiKey?: string): Promise<CatalogVoice[]> {
   const res = await fetch(`${ELEVENLABS_BASE}/voices`, {
-    headers: { 'xi-api-key': serverEnv.elevenlabs.apiKey },
+    headers: { 'xi-api-key': apiKey ?? serverEnv.elevenlabs.apiKey },
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -90,9 +92,9 @@ export async function listVoices(): Promise<CatalogVoice[]> {
 }
 
 // GET /v1/models → available models, mapped to { id, name }.
-export async function listModels(): Promise<CatalogModel[]> {
+export async function listModels(apiKey?: string): Promise<CatalogModel[]> {
   const res = await fetch(`${ELEVENLABS_BASE}/models`, {
-    headers: { 'xi-api-key': serverEnv.elevenlabs.apiKey },
+    headers: { 'xi-api-key': apiKey ?? serverEnv.elevenlabs.apiKey },
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');

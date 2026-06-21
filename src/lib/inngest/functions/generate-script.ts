@@ -2,6 +2,7 @@ import { inngest, type ScriptGenerateData } from '../client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { anthropic } from '@/lib/ai/anthropic';
 import { loadModelRouting } from '@/lib/ai/model-routing.server';
+import { resolveProviderKey } from '@/lib/credentials/store';
 import { deleteObject } from '@/lib/r2';
 import {
   buildSystemPrompt,
@@ -93,7 +94,8 @@ export const generateScript = inngest.createFunction(
         written++;
       };
 
-      const stream = anthropic().messages.stream({
+      const anthropicKey = await resolveProviderKey(admin, accountId, 'anthropic');
+      const stream = anthropic(anthropicKey).messages.stream({
         model: models.script_generation,
         max_tokens: 16000,
         thinking: { type: 'adaptive' },

@@ -5,7 +5,11 @@ import { DEFAULT_MODELS } from './model-routing';
 
 // Server-only Anthropic client. Cached across invocations in the same worker.
 let cached: Anthropic | null = null;
-export function anthropic(): Anthropic {
+// Returns the env-keyed cached client by default. When an explicit apiKey is given
+// (an account's stored credential), returns a fresh UNCACHED client for that key —
+// never caching a per-account key into the shared singleton.
+export function anthropic(apiKey?: string): Anthropic {
+  if (apiKey) return new Anthropic({ apiKey });
   if (cached) return cached;
   cached = new Anthropic({ apiKey: serverEnv.anthropic.apiKey });
   return cached;
