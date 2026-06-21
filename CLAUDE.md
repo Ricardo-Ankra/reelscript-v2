@@ -128,13 +128,16 @@ authoritative and the `docs/` copy remains the design record.
     code default.) The voice
     concurrency cap is a plain chunk of 5 (shared governor — Phase 9); seed uses a
     hardcoded default voice.
-  - **Phase 5 deferrals carried forward:** the **channel-resource UI** is Phase 8 —
-    the server capability (signed upload, fast vision auto-tag, `resolveResourceAssets`)
-    ships, but with no UI to create resources or set a shot `source='resource'`, and
-    the compose prompt doesn't yet surface resource ids, **resource placement is
-    dormant** (the AI can't place pinned resources until the Phase-8 UI + prompt
-    binding land). `confirmResourceUpload` doesn't yet write a `resource_tagging`
-    cost_event. The stock **search-result + file-bytes caches** are live; the full
+  - **Phase 5 deferrals carried forward:** the **channel-resource library UI shipped
+    2026-06-21 (slice 1)** — create/upload (signed PUT + vision auto-tag)/edit/delete
+    image+video resources on the channel page (pure `src/lib/resources/library.ts` +
+    `resource-actions.ts` direct-RLS writes over the deployed `channel_resources`
+    table, reusing the Phase-5 `createResourceUpload`/`confirmResourceUpload`). **Resource
+    placement stays dormant pending slice 2:** no UI yet to set a shot `source='resource'`,
+    and the compose prompt doesn't surface resource ids, so the AI can't place pinned
+    resources until slice 2 (shot placement + prompt binding) lands. `confirmResourceUpload`
+    still doesn't write a `resource_tagging` cost_event (deferred — kept off the
+    library slice). The stock **search-result + file-bytes caches** are live; the full
     rate/concurrency **governor is Phase 9** (search uses a plain per-call count).
     Gate-2 has **no auto-fix loop** (Phase 7) — it surfaces the failing frame only.
   - **Phase 4 deferrals carried forward:** Captions / kinetic text / music + remux
