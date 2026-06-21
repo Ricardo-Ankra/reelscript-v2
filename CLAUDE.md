@@ -73,6 +73,21 @@ authoritative and the `docs/` copy remains the design record.
   lifecycle + evolution guard, archive/restore/delete with usage gating. Backend proven
   end-to-end headlessly (`npm run drive:primitive`); the three-pane studio UI ships.
   Design docs under `docs/superpowers/specs/2026-06-0*`.)
+  - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
+    the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
+    redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel
+    page is tabbed — Videos (default) | Settings** — the Videos tab lists the channel's
+    videos with a **derived status** (`src/lib/videos/status.ts` `deriveVideoStatus`) and
+    is the **sole "New video" entry point**. A channel-scoped **New Video setup screen**
+    (`/videos/new?channel=<id>`) collects the prompt + **all options before generation**
+    (aspect/fps/length/captions/density/music), prefilled from the channel's full stored
+    defaults and overridable per video. `startScriptGeneration(prompt, channelId,
+    settings?)` now seeds from `parseChannelCreateOptions(channel.defaults)` ⊕
+    `mergeCreateSettings` (`src/lib/videos/create-settings.ts`) — **fixing the prior bug
+    where captions/music were hardcoded and `caption_emphasis_density` was omitted**. No
+    schema change (captions/density/music already lived in `channels.defaults` via the
+    Brand editor; no duplicate controls added). Design:
+    `docs/superpowers/specs/2026-06-21-frontend-navigation-overhaul-design.md`.
   - **Caption emphasis revision (2026-06-16):** **kinetic text is now folded into the
     caption track — there is no longer a separate kinetic track.** The caption track
     builds word-by-word (DOAC-style) off the same `scenes.word_alignments` timing, and
