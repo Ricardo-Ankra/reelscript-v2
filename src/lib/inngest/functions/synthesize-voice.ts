@@ -1,7 +1,7 @@
 import { inngest, type VoiceSynthesizeData } from '../client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { putObject } from '@/lib/r2';
-import { applyVoiceProfile } from '@/lib/voice/profile';
+import { applyStoredProfile, defaultTagMappings, type TagMappings } from '@/lib/voice/profile';
 import { estimateUsd } from '@/lib/voice/estimate';
 import { synthesize } from '@/lib/voice/elevenlabs';
 
@@ -54,6 +54,20 @@ export const synthesizeVoice = inngest.createFunction(
     let synthesized = 0;
     let skipped = 0;
 
+    // Resolve the account's stored profile for the chosen model once (memoized as a
+    // durable step → re-runs reuse it). Falls back to the built-in default mapping
+    // when no row exists — identical to slice 1. The returned plain object is
+    // Inngest-serializable.
+    const mapping = (await step.run('load-voice-profile', async () => {
+      const { data } = await admin
+        .from('voice_profiles')
+        .select('tag_mappings')
+        .eq('account_id', accountId)
+        .eq('elevenlabs_model_id', voice.modelId ?? '')
+        .maybeSingle();
+      return (data?.tag_mappings as TagMappings) ?? defaultTagMappings(voice.modelId ?? '');
+    })) as TagMappings;
+
     // Chunks of five = the concurrency cap. Each scene is a durable checkpoint.
     for (let i = 0; i < sceneIds.length; i += CONCURRENCY_CAP) {
       const chunk = sceneIds.slice(i, i + CONCURRENCY_CAP);
@@ -70,7 +84,7 @@ export const synthesizeVoice = inngest.createFunction(
               throw new Error(`load scene ${sceneId}: ${loadErr?.message ?? 'not found'}`);
             }
             const captured = before.narration as string;
-            const { text, settings } = applyVoiceProfile(captured, voice.modelId ?? '', voice.settings);
+            const { text, settings } = applyStoredProfile(captured, mapping, voice.settings);
             if (!text.trim()) return { skipped: true as const };
 
             const { audio, alignment, durationSeconds } = await synthesize({
