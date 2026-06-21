@@ -3,7 +3,7 @@
 // audio tags (per-span delivery); v2 strips tags to plain text (keeping <pause>
 // as an SSML break) and derives one scene-level voice_settings nudge from the
 // emotion tags present. The editable per-model voice_profiles override is slice 2.
-import { EMOTION_TAGS, applyFallbackProfile, type EmotionTag } from './emotion';
+import { EMOTION_TAGS, type EmotionTag } from './emotion';
 import type { VoiceSettings } from './alignment';
 
 export type TagMode = 'audio_tag' | 'ssml_break' | 'strip';
