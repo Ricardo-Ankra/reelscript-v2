@@ -2,7 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { inngest } from '@/lib/inngest/client';
-import { anthropic, PRIMITIVE_DRAFT_MODEL } from '@/lib/ai/anthropic';
+import { anthropic } from '@/lib/ai/anthropic';
+import { loadModelRouting } from '@/lib/ai/model-routing.server';
 import { buildDraftSystemPrompt, buildDraftUserPrompt, parseDraft } from '@/lib/ai/primitive-draft';
 import { runGates, type GateResult } from '@/lib/primitives/gates';
 import { lintPrimitive, formatLintFeedback } from '@/lib/primitives/lint';
@@ -37,6 +38,9 @@ export async function draftPrimitive(input: {
   feedback?: string;
   failingFrameDataUrl?: string; // the failing gate frame, fed back to the AI (vision)
 }): Promise<DraftPrimitiveResult | { error: string }> {
+  const supabase = await createClient();
+  const accountId = await requireAccountId(supabase);
+  const models = await loadModelRouting(supabase, accountId);
   const userText = buildDraftUserPrompt(input);
   // When a failing frame is provided (bounded auto-fix, spec 9.6.1), show it to the AI.
   const frame = input.failingFrameDataUrl ? parseDataUrl(input.failingFrameDataUrl) : null;
@@ -47,7 +51,7 @@ export async function draftPrimitive(input: {
       ]
     : userText;
   const msg = await anthropic().messages.create({
-    model: PRIMITIVE_DRAFT_MODEL,
+    model: models.primitive_drafting,
     max_tokens: 16000,
     system: buildDraftSystemPrompt(),
     messages: [{ role: 'user', content }],
@@ -66,7 +70,10 @@ export interface GatesResult {
 
 // Run the authoring gates and inline the smoke frame as a data URL for the preview.
 export async function runPrimitiveGates(input: { code: string; propSchema: PropSchema }): Promise<GatesResult> {
-  const out = await runGates(input);
+  const supabase = await createClient();
+  const accountId = await requireAccountId(supabase);
+  const models = await loadModelRouting(supabase, accountId);
+  const out = await runGates({ ...input, model: models.video_composition });
   let frameDataUrl: string | undefined;
   if (out.frameUrl) {
     try {

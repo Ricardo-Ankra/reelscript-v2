@@ -1,6 +1,7 @@
 import { inngest, type ScriptGenerateData } from '../client';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { anthropic, SCRIPT_MODEL } from '@/lib/ai/anthropic';
+import { anthropic } from '@/lib/ai/anthropic';
+import { loadModelRouting } from '@/lib/ai/model-routing.server';
 import { deleteObject } from '@/lib/r2';
 import {
   buildSystemPrompt,
@@ -48,6 +49,10 @@ export const generateScript = inngest.createFunction(
       if (error) throw new Error(`mark-running: ${error.message}`);
     });
 
+    const models = await step.run('load-model-routing', () =>
+      loadModelRouting(admin, accountId),
+    );
+
     // Stream + insert in one durable step. On retry it re-streams; the RPC
     // upserts on natural keys so rows converge rather than duplicate.
     const counts = await step.run('stream-and-insert', async () => {
@@ -89,7 +94,7 @@ export const generateScript = inngest.createFunction(
       };
 
       const stream = anthropic().messages.stream({
-        model: SCRIPT_MODEL,
+        model: models.script_generation,
         max_tokens: 16000,
         thinking: { type: 'adaptive' },
         system: buildSystemPrompt(),

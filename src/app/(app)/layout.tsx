@@ -33,6 +33,9 @@ export default async function AppLayout({
           <Link href="/channels" className="text-sm opacity-70 hover:opacity-100">
             Channels
           </Link>
+          <Link href="/settings" className="text-sm opacity-70 hover:opacity-100">
+            Settings
+          </Link>
         </nav>
         <div className="flex items-center gap-4 text-sm">
           <span className="opacity-70">{user.email}</span>
