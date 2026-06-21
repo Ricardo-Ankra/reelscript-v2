@@ -8,7 +8,10 @@ export type Shot = {
   description: string;
   source: string;
   stock_query: string | null;
+  resource_id: string | null;
 };
+
+export type ResourceOption = { id: string; kind: string; description: string };
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -27,6 +30,8 @@ export function SceneCard({
   onChange,
   onSynthesize,
   getAudioUrl,
+  resources,
+  onSetShotResource,
 }: {
   position: number;
   narration: string;
@@ -38,6 +43,8 @@ export function SceneCard({
   onChange: (text: string) => void;
   onSynthesize: () => void;
   getAudioUrl: () => Promise<string | null>;
+  resources: ResourceOption[];
+  onSetShotResource: (shotId: string, resourceId: string | null) => void;
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [loadingAudio, setLoadingAudio] = useState(false);
@@ -91,9 +98,25 @@ export function SceneCard({
               <li key={shot.id} className="flex items-start gap-2 text-xs opacity-60">
                 <span className="opacity-70">▸</span>
                 <span className="flex-1">{shot.description}</span>
-                <span className="rounded-full border border-black/10 px-1.5 py-px text-[10px] dark:border-white/10">
-                  {shot.source}
-                </span>
+                {resources.length > 0 ? (
+                  <select
+                    value={shot.resource_id ?? ''}
+                    onChange={(e) => onSetShotResource(shot.id, e.target.value || null)}
+                    className="max-w-[10rem] truncate rounded border border-black/10 bg-transparent px-1 py-px text-[10px] dark:border-white/10"
+                    title="Pin a channel resource (or use stock)"
+                  >
+                    <option value="">Use stock</option>
+                    {resources.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {(r.description || '(untitled)').slice(0, 40)} ({r.kind})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="rounded-full border border-black/10 px-1.5 py-px text-[10px] dark:border-white/10">
+                    {shot.source}
+                  </span>
+                )}
               </li>
             ))}
         </ul>
