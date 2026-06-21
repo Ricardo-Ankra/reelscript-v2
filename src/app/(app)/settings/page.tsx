@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { parseModelRouting } from '@/lib/ai/model-routing';
 import { ModelRoutingEditor } from './ModelRoutingEditor';
 import { VoiceProfilesEditor, type ProfileBlock } from './VoiceProfilesEditor';
+import { CredentialsEditor, type CredentialRow } from './CredentialsEditor';
 import type { TagMappings } from '@/lib/voice/profile';
 
 // Account settings (Phase 8). Model routing + voice profiles. RLS scopes both reads
@@ -21,6 +22,15 @@ export default async function SettingsPage() {
     mapping: (p.tag_mappings as TagMappings) ?? {},
   }));
 
+  const { data: credentialRows } = await supabase
+    .from('api_credentials')
+    .select('provider, status, last_validated_at');
+  const credentials: CredentialRow[] = (credentialRows ?? []).map((r) => ({
+    provider: r.provider as string,
+    status: r.status as string,
+    lastValidatedAt: (r.last_validated_at as string | null) ?? null,
+  }));
+
   return (
     <div className="space-y-8">
       <div>
@@ -29,6 +39,7 @@ export default async function SettingsPage() {
       </div>
       <ModelRoutingEditor initial={initialRouting} />
       <VoiceProfilesEditor initial={initialProfiles} />
+      <CredentialsEditor initial={credentials} />
     </div>
   );
 }

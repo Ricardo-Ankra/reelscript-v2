@@ -2,13 +2,14 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { serverEnv } from '../env.server';
 import { encryptSecret, decryptSecret } from './crypto';
+import { CREDENTIAL_PROVIDERS, type CredentialProvider } from './providers';
 
 // Per-account API credential store (Phase 8). Encrypt-at-rest over the deployed
 // api_credentials table (RLS-scoped). resolveProviderKey gives a consumer the
 // account's key, falling back (caller-side) to the env var on undefined.
 
-export const CREDENTIAL_PROVIDERS = ['anthropic', 'elevenlabs', 'pexels', 'pixabay'] as const;
-export type CredentialProvider = (typeof CREDENTIAL_PROVIDERS)[number];
+// Re-export for consumers that import from this module.
+export { CREDENTIAL_PROVIDERS, type CredentialProvider };
 
 // Single key per provider: a fixed sentinel label (NULLs are distinct under the
 // unique constraint, so we use '' to make "one per provider" enforceable).
