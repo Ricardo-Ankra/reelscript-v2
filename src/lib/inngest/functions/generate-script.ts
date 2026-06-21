@@ -26,6 +26,7 @@ export const generateScript = inngest.createFunction(
     id: 'generate-script',
     retries: 1,
     triggers: [{ event: 'script/generate' }],
+    cancelOn: [{ event: 'jobs/cancel', if: 'async.data.jobId == event.data.jobId' }],
     // After retries are exhausted, mark the job failed so the editor stops
     // showing "generating" forever (Phase 1 lesson: surface failures).
     onFailure: async ({ event, error }) => {
