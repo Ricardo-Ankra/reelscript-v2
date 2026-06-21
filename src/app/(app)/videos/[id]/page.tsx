@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Editor, type SceneWithShots } from './Editor';
 import type { Shot } from './SceneCard';
+import { VideoCostsPanel } from './VideoCostsPanel';
+import type { CostEvent } from '@/lib/costs/aggregate';
 
 // Editor server component: first paint of the video + any scenes/shots already
 // written. The client Editor then subscribes to Realtime for streaming inserts
@@ -70,14 +72,29 @@ export default async function VideoEditorPage({
     .limit(1)
     .maybeSingle();
 
+  const { data: costRows } = await supabase
+    .from('cost_events')
+    .select('render_id, operation, cost_usd')
+    .eq('video_id', id)
+    .order('created_at');
+  const costEvents: CostEvent[] = (costRows ?? []).map((r) => ({
+    videoId: id,
+    renderId: (r.render_id as string | null) ?? null,
+    operation: r.operation as string,
+    costUsd: Number(r.cost_usd ?? 0),
+  }));
+
   return (
-    <Editor
-      videoId={id}
-      title={video.title as string}
-      initialScenes={scenes}
-      initialStatus={(job?.status as string | null) ?? null}
-      initialSettings={(video.settings as Record<string, unknown>) ?? {}}
-      initialPrompt={(video.prompt as string | null) ?? ''}
-    />
+    <div className="space-y-6">
+      <Editor
+        videoId={id}
+        title={video.title as string}
+        initialScenes={scenes}
+        initialStatus={(job?.status as string | null) ?? null}
+        initialSettings={(video.settings as Record<string, unknown>) ?? {}}
+        initialPrompt={(video.prompt as string | null) ?? ''}
+      />
+      <VideoCostsPanel events={costEvents} />
+    </div>
   );
 }
