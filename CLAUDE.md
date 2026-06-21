@@ -88,6 +88,25 @@ authoritative and the `docs/` copy remains the design record.
     schema change (captions/density/music already lived in `channels.defaults` via the
     Brand editor; no duplicate controls added). Design:
     `docs/superpowers/specs/2026-06-21-frontend-navigation-overhaul-design.md`.
+  - **Jobs monitor + real Inngest cancellation (2026-06-21):** a **`/jobs` page**
+    (server + account-wide Supabase Realtime on `jobs`, Active/Recent groups) and a
+    **navbar "Jobs" badge** (live active count) show all background work; a **Cancel**
+    action **truly cancels the Inngest run** via `cancelOn` keyed by `jobId` (a
+    `jobs/cancel` event on all four job functions — `generateScript`/`renderVideo`/
+    `synthesizeVoice`/`deployPrimitive`, using the non-deprecated `if` form), then marks
+    the job row `cancelled` (and a render job's `renders` row `failed`+`{cancelled}` so a
+    fresh render starts clean). New `cancelled` value on the `job_status` enum
+    (migration); pure tested `src/lib/jobs/monitor.ts` (`isCancellable`/`jobStatusLabel`/
+    `partitionJobs`); `cancelJob`/`loadJobs`/`countActiveJobs` in
+    `src/app/(app)/jobs/actions.ts` (RLS, account-dual-keyed, send-then-mark, no-mark on
+    send failure). Handles both the genuinely-running case (cancelOn stops it) and the
+    queued-never-started case (row still marked so a new run can start). **Retry is
+    deferred** to a follow-up. Design:
+    `docs/superpowers/specs/2026-06-21-jobs-monitor-cancellation-design.md`. Also this
+    session: dev port pinned to **3000** (`next dev -p 3000`) + `npm run inngest` /
+    `npm run inspect:video <id>` helpers (a stuck "Generating" job traced to Inngest
+    dev-server port drift), and the video editor now **loads the latest render on open**
+    so a previously-rendered video is watchable without re-rendering.
   - **Caption emphasis revision (2026-06-16):** **kinetic text is now folded into the
     caption track — there is no longer a separate kinetic track.** The caption track
     builds word-by-word (DOAC-style) off the same `scenes.word_alignments` timing, and
