@@ -338,3 +338,25 @@ test('assembleSpec carries captionFocus onto the scene', () => {
   const spec = assembleSpec({ scenes: [{ sceneId: 'scene-1', captionFocus: 'text', instances: [] }] }, brief);
   assert.equal(spec.scenes[0].captionFocus, 'text');
 });
+
+// --- pinned resources (Phase 8, slice 2) ----------------------------------------
+
+test('user prompt emits a PINNED directive for scenes with pinnedResources, omits it otherwise', () => {
+  const pinnedBrief: CompositionBrief = {
+    ...brief,
+    assets: [...brief.assets, { id: 'resource-abc', kind: 'image', r2Key: 'resources/x.jpg' }],
+    scenes: [
+      {
+        ...brief.scenes[0],
+        pinnedResources: [{ assetId: 'resource-abc', kind: 'image', description: 'brand logo on white' }],
+      },
+      brief.scenes[1],
+    ],
+  };
+  const u = buildCompositionUserPrompt(pinnedBrief);
+  assert.ok(u.includes('PINNED'));
+  assert.ok(u.includes('resource-abc'));
+  assert.ok(u.includes('brand logo on white'));
+  assert.equal(u.match(/PINNED/g)?.length, 1); // only scene-1 has a pin
+  assert.ok(!buildCompositionUserPrompt(brief).includes('PINNED')); // no pins → no directive
+});

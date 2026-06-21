@@ -18,7 +18,7 @@ export default async function VideoEditorPage({
 
   const { data: video } = await supabase
     .from('videos')
-    .select('id, title, settings, prompt')
+    .select('id, title, settings, prompt, channel_id')
     .eq('id', id)
     .maybeSingle();
   if (!video) notFound();
@@ -42,7 +42,7 @@ export default async function VideoEditorPage({
   if (scenes.length > 0) {
     const { data: shotRows } = await supabase
       .from('shots')
-      .select('id, scene_id, position, description, source, stock_query')
+      .select('id, scene_id, position, description, source, stock_query, resource_id')
       .in(
         'scene_id',
         scenes.map((s) => s.id),
@@ -57,6 +57,7 @@ export default async function VideoEditorPage({
         description: row.description as string,
         source: row.source as string,
         stock_query: (row.stock_query as string | null) ?? null,
+        resource_id: (row.resource_id as string | null) ?? null,
       });
       byScene.set(row.scene_id as string, list);
     }
@@ -71,6 +72,17 @@ export default async function VideoEditorPage({
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  const { data: resourceRows } = await supabase
+    .from('channel_resources')
+    .select('id, kind, description')
+    .eq('channel_id', video.channel_id as string)
+    .order('created_at', { ascending: false });
+  const resources = (resourceRows ?? []).map((r) => ({
+    id: r.id as string,
+    kind: r.kind as string,
+    description: (r.description as string | null) ?? '',
+  }));
 
   const { data: costRows } = await supabase
     .from('cost_events')
@@ -93,6 +105,7 @@ export default async function VideoEditorPage({
         initialStatus={(job?.status as string | null) ?? null}
         initialSettings={(video.settings as Record<string, unknown>) ?? {}}
         initialPrompt={(video.prompt as string | null) ?? ''}
+        resources={resources}
       />
       <VideoCostsPanel events={costEvents} />
     </div>

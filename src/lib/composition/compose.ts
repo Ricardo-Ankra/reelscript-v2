@@ -27,6 +27,9 @@ export interface SceneBrief {
   shotHints: string[]; // the shots' descriptions/intents from the script
   durationInFrames: number; // system-fixed, from the synthesized audio
   voiceoverAssetId?: string; // manifest id for this scene's audio
+  // Channel resources pinned to this scene's shots (source='resource'). The AI MUST
+  // place these as the scene's primary visual (see buildCompositionUserPrompt).
+  pinnedResources?: { assetId: string; kind: 'image' | 'video'; description: string }[];
 }
 
 export interface CompositionBrief {
@@ -142,6 +145,8 @@ export function buildCompositionSystemPrompt(
     'Rules:',
     '- Colour/token props must name a theme token from the provided theme (never a hex).',
     backgroundRule,
+    '- If a scene lists PINNED resources, you MUST use them as its primary visual (Image/Video',
+    '  at layer 0) and not search stock for that scene — a pin is an explicit operator choice.',
     "- Layer instances bottom-up with integer `layer` (higher = in front).",
     '- Each instance has `startFrame` (≥0, relative to the scene) and `durationInFrames`',
     '  (>0). startFrame + durationInFrames must NOT exceed the scene duration.',
@@ -183,12 +188,20 @@ export function buildCompositionUserPrompt(brief: CompositionBrief): string {
   const scenes = brief.scenes
     .map((s) => {
       const hints = s.shotHints.length ? s.shotHints.map((h) => `    - ${h}`).join('\n') : '    (none)';
-      return [
+      const lines = [
         `Scene ${s.position} (sceneId "${s.id}", durationInFrames ${s.durationInFrames}):`,
         `  narration: ${JSON.stringify(s.narration)}`,
         `  shot intents:`,
         hints,
-      ].join('\n');
+      ];
+      if (s.pinnedResources && s.pinnedResources.length > 0) {
+        lines.push(
+          '  PINNED resources (you MUST place these as this scene\'s primary visual — an',
+          '  Image/Video at layer 0, fit "cover"; do NOT search stock for this scene\'s background):',
+          ...s.pinnedResources.map((r) => `    - ${r.assetId} (${r.kind}): ${r.description}`),
+        );
+      }
+      return lines.join('\n');
     })
     .join('\n\n');
 

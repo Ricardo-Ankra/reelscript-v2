@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { SceneCard, type Shot } from './SceneCard';
+import { SceneCard, type Shot, type ResourceOption } from './SceneCard';
+import { setShotResource } from './shot-actions';
 import { estimateSynthesisCost } from '@/lib/voice/estimate';
 import { synthesizeScenes, getSceneAudioUrl } from './voice-actions';
 import { startVideoRender, getRenderState } from './render-actions';
@@ -31,6 +32,7 @@ export function Editor({
   initialStatus,
   initialSettings,
   initialPrompt,
+  resources,
 }: {
   videoId: string;
   title: string;
@@ -38,6 +40,7 @@ export function Editor({
   initialStatus: string | null;
   initialSettings: Record<string, unknown>;
   initialPrompt: string;
+  resources: ResourceOption[];
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [scenes, setScenes] = useState<SceneWithShots[]>(initialScenes);
@@ -65,7 +68,7 @@ export function Editor({
     async (sceneId: string) => {
       const { data } = await supabase
         .from('shots')
-        .select('id, position, description, source, stock_query')
+        .select('id, position, description, source, stock_query, resource_id')
         .eq('scene_id', sceneId)
         .order('position');
       if (!data) return;
@@ -93,7 +96,7 @@ export function Editor({
     if (ids.length) {
       const { data: shotRows } = await supabase
         .from('shots')
-        .select('id, scene_id, position, description, source, stock_query')
+        .select('id, scene_id, position, description, source, stock_query, resource_id')
         .in('scene_id', ids)
         .order('position');
       for (const sh of shotRows ?? []) {
@@ -265,6 +268,22 @@ export function Editor({
     return url;
   }, []);
 
+  const onSetShotResource = useCallback(
+    async (shotId: string, resourceId: string | null) => {
+      const res = await setShotResource(shotId, resourceId);
+      if (!res.ok) return;
+      setScenes((prev) =>
+        prev.map((s) => ({
+          ...s,
+          shots: s.shots.map((sh) =>
+            sh.id === shotId ? { ...sh, source: res.source, resource_id: resourceId } : sh,
+          ),
+        })),
+      );
+    },
+    [],
+  );
+
   // Generate Video: snapshot + compose + render. Handles the completeness gate —
   // a stale-scenes block prompts for an explicit override (honest mismatch).
   const handleGenerate = useCallback(async () => {
@@ -418,6 +437,8 @@ export function Editor({
               onChange={(text) => onNarrationChange(scene.id, text)}
               onSynthesize={() => runSynthesis([scene.id], [scene.id])}
               getAudioUrl={() => getAudioUrl(scene.id)}
+              resources={resources}
+              onSetShotResource={onSetShotResource}
             />
           ))}
         </div>

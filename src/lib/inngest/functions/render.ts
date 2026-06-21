@@ -28,7 +28,7 @@ import { validateSpec, formatGate1Feedback, type Gate1Error } from '@/lib/compos
 import type { CompositionSpec, AssetManifestEntry } from '@/lib/composition/spec';
 import { hasStockKeys, searchStock } from '@/lib/assets/search';
 import type { StockCandidate } from '@/lib/assets/candidate';
-import { resolveStockAssets, resolveResourceAssets } from '@/lib/assets/resolve';
+import { resolveStockAssets, resolveResourceAssets, resourceAssetId } from '@/lib/assets/resolve';
 import { runGate2 } from '@/lib/composition/gate2';
 import { chunksToSegments, toSrt, toVtt, type CaptionStyle } from '@/lib/captions/segments';
 import { tokenizeSpokenWords } from '@/lib/captions/tokenize';
@@ -472,6 +472,7 @@ async function loadBrief(
   const shotsByScene = new Map<string, string[]>();
   let needsStock = false;
   const resourceIdSet = new Set<string>();
+  const pinnedByScene = new Map<string, string[]>();
   if (ids.length) {
     const { data: shotRows } = await admin
       .from('shots')
@@ -484,9 +485,29 @@ async function loadBrief(
       shotsByScene.set(sh.scene_id as string, list);
       if (sh.source === 'resource' && sh.resource_id) {
         resourceIdSet.add(sh.resource_id as string);
+        const pins = pinnedByScene.get(sh.scene_id as string) ?? [];
+        pins.push(sh.resource_id as string);
+        pinnedByScene.set(sh.scene_id as string, pins);
       } else {
         needsStock = true; // 'stock' (the default) — this shot wants real footage
       }
+    }
+  }
+
+  // Resource kind + description for the pinned shots, so the compose prompt can name
+  // and describe each pin. One batched read; missing ids (e.g. a deleted resource
+  // whose FK cleared) simply don't appear and are skipped below.
+  const resourceMeta = new Map<string, { kind: 'image' | 'video'; description: string }>();
+  if (resourceIdSet.size) {
+    const { data: resRows } = await admin
+      .from('channel_resources')
+      .select('id, kind, description')
+      .in('id', [...resourceIdSet]);
+    for (const r of resRows ?? []) {
+      resourceMeta.set(r.id as string, {
+        kind: (r.kind as string) === 'video' ? 'video' : 'image',
+        description: (r.description as string | null) ?? '',
+      });
     }
   }
 
@@ -506,6 +527,12 @@ async function loadBrief(
     const narration = (s.narration as string) ?? '';
     captionInputs.push({ alignment, startFrame: offset, narration });
     offset += durationInFrames;
+    const pinnedResources = (pinnedByScene.get(s.id as string) ?? [])
+      .map((rid) => {
+        const meta = resourceMeta.get(rid);
+        return meta ? { assetId: resourceAssetId(rid), kind: meta.kind, description: meta.description } : null;
+      })
+      .filter((p): p is { assetId: string; kind: 'image' | 'video'; description: string } => p !== null);
     return {
       id: s.id as string,
       position,
@@ -513,6 +540,7 @@ async function loadBrief(
       shotHints: shotsByScene.get(s.id as string) ?? [],
       durationInFrames,
       voiceoverAssetId,
+      pinnedResources: pinnedResources.length ? pinnedResources : undefined,
     };
   });
 
