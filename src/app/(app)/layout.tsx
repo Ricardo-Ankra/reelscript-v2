@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { signout } from '../(auth)/actions';
+import { JobsNavBadge } from './jobs/JobsNavBadge';
+import { countActiveJobs } from './jobs/actions';
 
 // Auth-gated application shell. Every route under (app) requires a session;
 // the middleware redirects unauthenticated requests, and this is the
@@ -19,6 +21,8 @@ export default async function AppLayout({
   if (!user) {
     redirect('/login');
   }
+
+  const activeJobs = await countActiveJobs();
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -39,6 +43,7 @@ export default async function AppLayout({
           <Link href="/primitives" className="text-sm opacity-70 hover:opacity-100">
             Primitives
           </Link>
+          <JobsNavBadge initialCount={activeJobs} />
         </nav>
         <div className="flex items-center gap-4 text-sm">
           <span className="opacity-70">{user.email}</span>
