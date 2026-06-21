@@ -53,9 +53,14 @@ change beyond threading one new argument.
   (`VideoSettings`, `sanitizeSettingsPatch`, `parseVideoSettings`,
   `SETTINGS_DEFAULTS`); `src/lib/channels/video-defaults.ts`
   (`VideoDefaultsForm`, `parseVideoDefaults`, `validateVideoDefaultsForm`,
-  `VIDEO_DEFAULTS_FALLBACK`). `caption_emphasis_density` already lives in
-  `channels.defaults` (written by the Brand editor); only `captions_on` and
-  `music_on` are not yet channel-level.
+  `VIDEO_DEFAULTS_FALLBACK` — the three **format** keys only).
+  **All three** of `captions_on`, `caption_emphasis_density`, `music_on`
+  already live in `channels.defaults`, written by the **Brand editor**
+  (`src/lib/channels/brand.ts` — `BrandForm` carries `captionsOn`/`density`/
+  `musicOn`; `validateBrandForm` writes them into `defaults`). They are NOT
+  missing as channel defaults. The real gap: `startScriptGeneration` ignores
+  them — it hardcodes `captions_on`/`music_on` and omits
+  `caption_emphasis_density` entirely.
 
 ## Goal
 
@@ -75,8 +80,10 @@ stub is gone.
   "New video" button (the sole creation entry point).
 - A **New Video setup screen** (`/videos/new?channel=<id>`) collecting prompt +
   all options before generation.
-- Extending **channel video-defaults** to include `captions_on`,
-  `caption_emphasis_density` (already present — surfaced here), `music_on`.
+- Reading the **full** channel defaults (format + captions/density/music) at
+  video creation, with per-video **overrides** on the setup screen. **No new
+  editor controls** — captions/density/music are already channel defaults owned
+  by the Brand editor; duplicating them is explicitly rejected.
 - Reworking `startScriptGeneration` to accept a validated settings object.
 - Redirects: `/dashboard` → `/`, `/channels` → `/`.
 
@@ -200,8 +207,8 @@ New route `src/app/(app)/videos/new/page.tsx` (server) + `NewVideoForm.tsx`
 
 - The page reads `?channel=<id>`, resolves the channel (RLS). Missing/invalid →
   `redirect('/')`.
-- It parses the channel's full defaults (Section 6) and passes them as the
-  form's initial values.
+- It parses the channel's full defaults (Section 6 helper) and passes them as
+  the form's initial values.
 - The channel is shown as a **read-only heading** ("New video · <channel
   name>") — no channel select; the channel is fixed by where the operator
   launched from.
@@ -217,37 +224,42 @@ New route `src/app/(app)/videos/new/page.tsx` (server) + `NewVideoForm.tsx`
   → `router.push('/videos/<id>')` (same redirect-on-success pattern as today's
   `PromptBox`). Error surfaced inline.
 
-### 6. Channel video-defaults extension (`src/lib/channels/video-defaults.ts`)
+### 6. Full channel-defaults read + per-video override (`src/lib/videos/create-settings.ts`, pure, unit-tested)
 
-Extend the form to the full option set. `caption_emphasis_density` already
-exists in `channels.defaults` (Brand editor writes it); it is **surfaced** in
-this editor reading the same key — no second storage location. `captions_on`
-and `music_on` are new keys in `channels.defaults`.
+The channel **already** stores the full option set in `channels.defaults`
+(format keys via the Video-defaults editor; captions/density/music via the
+Brand editor). This slice does **not** add or move any editor control — it adds
+a single pure module that (a) reads the full set for prefill, and (b) merges
+per-video overrides over it at creation. No `VideoDefaultsEditor`/Brand-editor
+change; no migration.
 
 ```ts
-export interface VideoDefaultsForm {
-  aspectRatio: AspectRatio;
-  fps: Fps;
-  targetLength: number;
-  captionsOn: boolean;
-  captionEmphasisDensity: CaptionEmphasisDensity;
-  musicOn: boolean;
-}
+import type {
+  VideoSettings, CaptionEmphasisDensity, AspectRatio, Fps,
+} from './settings';
+
+// The six creation options, snake_case to match videos.settings storage.
+export type CreateOptions = Omit<VideoSettings, never>; // = the 6 VideoSettings keys
+
+// Read the full option set from channels.defaults, backfilling SETTINGS_DEFAULTS
+// per key. Reuses parseVideoDefaults for aspect/fps/target_length and the same
+// density/boolean validity checks for captions_on/caption_emphasis_density/music_on.
+export function parseChannelCreateOptions(defaults: unknown): CreateOptions;
+
+// Overlay a (loosely typed) per-video override onto a base CreateOptions,
+// re-validating every key server-side: the five non-length keys via
+// sanitizeSettingsPatch, target_length via MIN/MAX_TARGET_LENGTH. Any
+// missing/invalid key falls back to the base value. Returns the seed object.
+export function mergeCreateSettings(base: CreateOptions, override: unknown): CreateOptions;
 ```
 
-- `VIDEO_DEFAULTS_FALLBACK` extends with `captionsOn: true`,
-  `captionEmphasisDensity: 'sparing'`, `musicOn: false` (mirrors
-  `SETTINGS_DEFAULTS` / `DEFAULT_VIDEO_CONFIG`).
-- `parseVideoDefaults` backfills the three new fields per key
-  (`captions_on`, `caption_emphasis_density`, `music_on`), reusing the density
-  validity check from `settings.ts`.
-- `validateVideoDefaultsForm` validates and returns the snake_case object to
-  merge into `channels.defaults`, now including the three new keys.
-- `VideoDefaultsEditor.tsx` gains the three controls (captions checkbox +
-  density select disabled when off + music checkbox), same dirty-tracked single
-  Save. The Brand editor's existing `caption_emphasis_density` control is left
-  as-is (same stored key); both read/write the one key. (A note in the plan
-  flags the shared key so the two editors don't diverge.)
+- `parseChannelCreateOptions` is what the setup screen (Section 5) and the
+  creation action (Section 7) both call — one place that reads the channel's
+  full defaults.
+- `mergeCreateSettings` is the seed builder: `base ⊕ sanitized(override)`,
+  per-key fallback, never client-trusted.
+- Existing `video-defaults.ts` / `brand.ts` / their editors are **untouched**.
+  (Per-video override is provided by the setup screen, not a new editor.)
 
 ### 7. Reworked creation action (`src/app/(app)/videos/actions.ts`)
 
@@ -265,18 +277,18 @@ export async function startScriptGeneration(
 **fully re-validated server-side** (never trusted): the five non-length keys via
 `sanitizeSettingsPatch`, `target_length` via the `MIN/MAX_TARGET_LENGTH` bounds.
 
-- Resolve the channel and parse its full defaults as the **fallback/base**.
-- Build the seed by overlaying the (sanitized) `settings` arg on the channel
-  defaults: aspect/fps/captions/density/music via `sanitizeSettingsPatch`
-  (extended is unnecessary — it already covers all five non-length keys),
-  `target_length` validated against `MIN/MAX_TARGET_LENGTH` and otherwise
-  falling back to the channel default. Never client-trusted: anything invalid
-  falls back to the channel default for that key.
-- The rest is unchanged: insert video with `settings`, insert
+- Resolve the channel, then `base = parseChannelCreateOptions(channel.defaults)`
+  (the full six-key set the channel already stores — Section 6).
+- `seed = mergeCreateSettings(base, settings)` — per-key override with fallback
+  to the channel default; never client-trusted.
+- The rest is unchanged: insert video with `settings: seed`, insert
   `script_generation` job, build `VideoConfig` from the seed, send
-  `script/generate`.
-- Called with two args (no `settings`) it is **byte-identical to today** (uses
-  channel defaults wholesale), so nothing else that might call it breaks.
+  `script/generate`. The seed now includes `caption_emphasis_density` (today's
+  code omits it), so it flows into the video from the start.
+- Called with two args (no `settings`) the seed is exactly the channel's stored
+  defaults — and because today's code instead hardcodes `captions_on`/`music_on`
+  and omits density, this is also a **bug fix**: a two-arg call now honors the
+  channel's captions/music/density defaults rather than the code constants.
 
 ## Data flow
 
@@ -285,11 +297,11 @@ export async function startScriptGeneration(
            → New channel (inline) → channel created
 /channels/<id> [Videos]  → list videos (status derived) → /videos/<id>
                          → "New video" → /videos/new?channel=<id>
-/channels/<id>?tab=settings → six editors (Video defaults now full set)
-/videos/new?channel=<id>  → prefill from channel defaults
+/channels/<id>?tab=settings → six editors (unchanged)
+/videos/new?channel=<id>  → prefill = parseChannelCreateOptions(channel.defaults)
    → set prompt + options → Generate
    → startScriptGeneration(prompt, channelId, settings)
-       seed = channelDefaults ⊕ sanitized(settings)
+       seed = mergeCreateSettings(base, settings)
        insert video(settings=seed) + job + send script/generate
    → /videos/<id>  (existing editor; VideoSettingsPanel still does post-gen tweaks)
 ```
@@ -308,38 +320,41 @@ export async function startScriptGeneration(
 
 ## Back-compatibility
 
-- Additive + relocation. `startScriptGeneration`'s third arg is optional; the
-  two-arg call is unchanged behavior.
-- No schema change. `channels.defaults` gains two optional keys; channels
-  without them parse to the fallback (captions on, music off) — identical to
-  today's hardcoded seed.
+- Additive + relocation. `startScriptGeneration`'s third arg is optional.
+- No schema change, **no new `channels.defaults` keys** (captions/density/music
+  already exist there via the Brand editor). The only behavioral change to the
+  two-arg path is the intentional bug fix: the seed now reads the channel's
+  stored captions/density/music instead of code constants.
 - `videos.settings` shape is unchanged (the setup screen writes the same five
-  keys + `target_length` the editor already reads).
+  keys + `target_length` the editor already reads — now also persisting
+  `caption_emphasis_density` from creation).
 - Old `/dashboard` / `/channels` URLs keep working via redirect.
+- No `VideoDefaultsEditor` / Brand-editor change → those surfaces behave exactly
+  as before.
 
 ## Testing
 
 - **Unit (node:test):**
-  - `src/lib/channels/video-defaults.test.ts` (extend): parse backfills the
-    three new keys; validate accepts/rejects them; fallback values.
+  - `src/lib/videos/create-settings.test.ts` (new): `parseChannelCreateOptions`
+    backfills `SETTINGS_DEFAULTS` per missing/invalid key and reads stored
+    values; `mergeCreateSettings` overrides valid keys, falls back per
+    invalid/missing key, and clamps `target_length` to `MIN/MAX_TARGET_LENGTH`.
   - `src/lib/videos/status.test.ts` (new): each precedence branch of
     `deriveVideoStatus`.
-  - `src/lib/videos/settings` or an action-level pure helper: the
-    `channelDefaults ⊕ sanitized(settings)` merge clamps/falls back per key
-    (extract the merge into a pure, tested helper so the action stays thin).
 - **Regression:** `npm test` green; `npx tsc --noEmit` + `npm run lint` clean;
   `npm run build` succeeds (new routes, redirects, deleted `PromptBox`).
 - **Manual / app-run e2e:** Home shows channels → open a channel → Videos tab
-  lists videos with correct status → "New video" → options prefilled from
-  channel defaults → change them → Generate → land in editor with those
+  lists videos with correct status → "New video" → options prefilled from the
+  channel's full defaults → change them → Generate → land in editor with those
   settings applied → return to the channel and see the new video listed →
-  Settings tab still saves all six editors, with the extended Video defaults
-  persisting captions/density/music.
+  Settings tab still saves all six editors unchanged.
 
 ## Open questions
 
-None. The four structural decisions are settled: New Video setup screen
+None. The structural decisions are settled: New Video setup screen
 (channel-scoped, sole creation entry from the Videos tab), tabbed channel page
 (Videos default | Settings), Home as the channels surface (no "New video" on
-Home, no "Channels" nav link), and channel video-defaults extended to the full
-option set.
+Home, no "Channels" nav link), and full channel-defaults inheritance at
+creation with per-video override on the setup screen — **no duplicate editor
+controls** (captions/density/music stay owned by the Brand editor; the creation
+seed is fixed to read them).
