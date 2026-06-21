@@ -99,9 +99,10 @@ authoritative and the `docs/` copy remains the design record.
     defaults (`channels.defaults` aspect/fps/target_length, inherited by new videos
     at creation) via the Phase-8 video-defaults slice (2026-06-18). **Thumbnail
     generation** is still Phase 8. Music selection is a **deterministic mood-match in code** (not an AI
-    choice), and the **Music panel is minimal** (reroll + master volume) — the full
-    panel (ducking depth, loop, in/out crop, fade) is Phase 8, though the re-mux
-    already accepts those params. Seed beds are **generated via the ElevenLabs Music
+    choice), and the **Music panel** now exposes all six mix params (volume, ducking
+    depth, loop, in/out crop, fade) — **full panel shipped 2026-06-21**; Save
+    dual-writes `renders.music_params` (immediate remux) + `videos.settings.music_params`
+    (re-render inherits). Seed beds are **generated via the ElevenLabs Music
     API** (Pexels Audio discontinued); **reroll is reselection-only**, never
     regeneration. The remux Lambda is **invoked via the SDK (SigV4)**, not a public
     Function URL (the AWS account blocks public URLs); `remotion-user` carries a narrow
