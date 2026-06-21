@@ -1,7 +1,7 @@
 import { inngest, type VoiceSynthesizeData } from '../client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { putObject } from '@/lib/r2';
-import { applyFallbackProfile } from '@/lib/voice/emotion';
+import { applyVoiceProfile } from '@/lib/voice/profile';
 import { estimateUsd } from '@/lib/voice/estimate';
 import { synthesize } from '@/lib/voice/elevenlabs';
 
@@ -70,14 +70,14 @@ export const synthesizeVoice = inngest.createFunction(
               throw new Error(`load scene ${sceneId}: ${loadErr?.message ?? 'not found'}`);
             }
             const captured = before.narration as string;
-            const text = applyFallbackProfile(captured);
+            const { text, settings } = applyVoiceProfile(captured, voice.modelId ?? '', voice.settings);
             if (!text.trim()) return { skipped: true as const };
 
             const { audio, alignment, durationSeconds } = await synthesize({
               text,
               voiceId: voice.voiceId,
               modelId: voice.modelId,
-              voiceSettings: voice.settings,
+              voiceSettings: settings,
             });
 
             // Stable key: re-synthesis overwrites in place (signed URLs change per

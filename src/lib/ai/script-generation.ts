@@ -124,6 +124,15 @@ export function buildSystemPrompt(): string {
     '',
     'Guidance: prefer "stock" for real footage (always give a stockQuery), and',
     '"procedural" for text/animation/diagrams. Keep 1-3 shots per scene.',
+    '',
+    'DELIVERY TAGS (optional, use SPARINGLY — at most one or two per scene, only',
+    'where they genuinely improve delivery; most scenes need none):',
+    '- Place an inline tag from this fixed set directly in the narration text:',
+    '  <excited> <pause> <whisper> <emphatic> <calm> <curious> <serious>',
+    '- They are non-spoken delivery directives, not words. <pause> inserts a short',
+    '  beat; the others colour the surrounding delivery.',
+    '- Use ONLY these exact tags (any other tag is ignored). Do not stack them.',
+    '- Example: "This changes everything. <pause> <excited> Let us dig in."',
   ].join('\n');
 }
 

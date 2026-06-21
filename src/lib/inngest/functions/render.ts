@@ -41,6 +41,7 @@ import { selectMusicTrack, type MusicTrack } from '@/lib/music/select';
 import { canonicalizeMusicParams, type MusicParams } from '@/lib/music/params';
 import type { TtsAlignment } from '@/lib/voice/alignment';
 import { loadComposeRegistry } from '@/lib/primitives/registry-load';
+import { stripEmotionTags } from '@/lib/voice/profile';
 
 // =============================================================================
 // Phase 4 — the render pipeline (spec 13.1). One function: compose → gate1 →
@@ -154,7 +155,7 @@ export const renderVideo = inngest.createFunction(
               ? []
               : await annotateSceneEmphasis({
                   alignment: ci.alignment,
-                  sceneScript: ci.narration,
+                  sceneScript: stripEmotionTags(ci.narration),
                   density: brief.captionEmphasisDensity,
                   model: models.caption_emphasis,
                 });
