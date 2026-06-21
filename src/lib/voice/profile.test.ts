@@ -176,3 +176,13 @@ test('equivalence: applyVoiceProfile == applyStoredProfile(defaultTagMappings) f
     applyStoredProfile(n, defaultTagMappings('eleven_multilingual_v2'), undefined),
   );
 });
+
+test('validateTagMappings: rejects nudge on non-strip mode; defaults still valid', () => {
+  // A nudge on a non-strip entry (audio_tag) must be rejected — it would be dead data.
+  const res = validateTagMappings({ '<calm>': { mode: 'audio_tag', value: '[calm]', nudge: { style: 0.1 } } });
+  assert.equal(res.ok, false);
+
+  // The built-in defaults for both v2 and v3 must still validate cleanly.
+  assert.equal(validateTagMappings(defaultTagMappings('eleven_multilingual_v2')).ok, true);
+  assert.equal(validateTagMappings(defaultTagMappings('eleven_v3')).ok, true);
+});

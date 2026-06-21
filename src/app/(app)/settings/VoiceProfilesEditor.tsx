@@ -39,11 +39,15 @@ function ProfileCard({
   }
 
   function patchNudge(tag: EmotionTag, axis: 'stability' | 'style', raw: string) {
-    const cur = mapping[tag] ?? { mode: 'strip' as TagMode };
-    const nudge = { ...(cur.nudge ?? {}) };
-    if (raw === '') delete nudge[axis];
-    else nudge[axis] = Number(raw);
-    patch(tag, { nudge });
+    setMapping((m) => {
+      const cur = m[tag] ?? { mode: 'strip' as TagMode };
+      const nudge = { ...(cur.nudge ?? {}) };
+      if (raw === '') delete nudge[axis];
+      else nudge[axis] = Number(raw);
+      return { ...m, [tag]: { ...cur, nudge } };
+    });
+    setDirty(true);
+    setSaved(false);
   }
 
   async function onSave() {

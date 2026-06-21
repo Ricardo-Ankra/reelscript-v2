@@ -175,6 +175,12 @@ export function validateTagMappings(
       entry.value = m.value;
     }
     if (m.nudge !== undefined) {
+      // A nudge is only meaningful for strip mode; it is silently ignored by
+      // applyStoredProfile for all other modes, so reject it here to prevent
+      // persisting dead data.
+      if (mode !== 'strip') {
+        return { ok: false, reason: `${key}: nudge only applies to strip mode.` };
+      }
       if (typeof m.nudge !== 'object' || m.nudge === null || Array.isArray(m.nudge)) {
         return { ok: false, reason: `${key}: nudge must be an object.` };
       }
