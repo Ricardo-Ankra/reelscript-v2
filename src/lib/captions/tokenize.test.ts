@@ -77,3 +77,21 @@ test('tokenizeSpokenWords: mixed tricky words keep their count and order', () =>
 test('tokenizeSpokenWords: empty alignment yields no tokens', () => {
   assert.deepEqual(tokenizeSpokenWords({ characters: [], character_start_times_seconds: [], character_end_times_seconds: [] }), []);
 });
+
+test('tokenizeSpokenWords: drops a bracketed audio-tag token, keeps real words + timings', () => {
+  const a = align([
+    { t: 'hello', s: 0, e: 1 },
+    { t: '[excited]', s: 1, e: 1.4 },
+    { t: 'world', s: 1.4, e: 2 },
+  ]);
+  const ws = tokenizeSpokenWords(a);
+  assert.deepEqual(texts(ws), ['hello', 'world']);
+  assert.equal(ws[0].startSec, 0);
+  assert.equal(ws[1].startSec, 1.4);
+  assert.equal(ws[1].endSec, 2);
+});
+
+test('tokenizeSpokenWords: a word with internal brackets is NOT dropped', () => {
+  const a = align([{ t: 'a[b]c', s: 0, e: 1 }]);
+  assert.deepEqual(texts(tokenizeSpokenWords(a)), ['a[b]c']);
+});

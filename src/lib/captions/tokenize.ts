@@ -24,6 +24,12 @@ export interface SpokenWord {
   endSec: number; // last character's end time
 }
 
+// A token that is *entirely* a bracketed audio tag (e.g. "[excited]") is an
+// ElevenLabs v3 delivery directive that the model may echo into the verbatim
+// alignment. It is never a spoken word, so it must not become a caption. Normal
+// narration words are never fully bracketed, so v2 captions are unaffected.
+const AUDIO_TAG_TOKEN = /^\[[^\]]+\]$/;
+
 export function tokenizeSpokenWords(alignment: TtsAlignment): SpokenWord[] {
   const chars = alignment.characters ?? [];
   const starts = alignment.character_start_times_seconds ?? [];
@@ -48,5 +54,5 @@ export function tokenizeSpokenWords(alignment: TtsAlignment): SpokenWord[] {
     }
   }
   if (cur) words.push(cur);
-  return words;
+  return words.filter((w) => !AUDIO_TAG_TOKEN.test(w.text));
 }
