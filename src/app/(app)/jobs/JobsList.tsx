@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { partitionJobs, jobStatusLabel, isCancellable, type JobRow } from '@/lib/jobs/monitor';
+import { partitionJobs, jobStatusLabel, isCancellable, isRetryable, type JobRow } from '@/lib/jobs/monitor';
 import { cancelJob, loadJobs } from './actions';
+import { retryGeneration } from '../videos/[id]/regenerate-actions';
 
 export function JobsList({ initial }: { initial: JobRow[] }) {
   const supabase = useMemo(() => createClient(), []);
@@ -32,6 +33,19 @@ export function JobsList({ initial }: { initial: JobRow[] }) {
       supabase.removeChannel(channel);
     };
   }, [supabase, refresh]);
+
+  const onRetry = useCallback(async (id: string, videoId: string) => {
+    setBusy((p) => new Set(p).add(id));
+    setError(null);
+    const res = await retryGeneration(videoId);
+    if (!res.ok) setError(res.reason);
+    // Realtime refresh reconciles the row's new status.
+    setBusy((p) => {
+      const n = new Set(p);
+      n.delete(id);
+      return n;
+    });
+  }, []);
 
   const onCancel = useCallback(async (id: string) => {
     setBusy((p) => new Set(p).add(id));
@@ -73,7 +87,13 @@ export function JobsList({ initial }: { initial: JobRow[] }) {
           <h2 className="text-sm font-medium opacity-70">Recent</h2>
           <ul className="divide-y divide-black/10 rounded-lg border border-black/10 dark:divide-white/10 dark:border-white/10">
             {recent.map((j) => (
-              <JobItem key={j.id} job={j} busy={false} onCancel={undefined} />
+              <JobItem
+                key={j.id}
+                job={j}
+                busy={busy.has(j.id)}
+                onCancel={undefined}
+                onRetry={j.videoId ? () => onRetry(j.id, j.videoId as string) : undefined}
+              />
             ))}
           </ul>
         </section>
@@ -86,10 +106,12 @@ function JobItem({
   job,
   busy,
   onCancel,
+  onRetry,
 }: {
   job: JobRow;
   busy: boolean;
   onCancel?: () => void;
+  onRetry?: () => void;
 }) {
   const phase = job.phase ? ` · ${job.phase}` : '';
   return (
@@ -116,6 +138,16 @@ function JobItem({
           className="shrink-0 rounded-md border border-red-500/40 px-2.5 py-1 text-xs font-medium text-red-600 enabled:hover:bg-red-500/10 disabled:opacity-40"
         >
           {busy ? 'Cancelling…' : 'Cancel'}
+        </button>
+      )}
+      {onRetry && isRetryable(job.type, job.status) && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onRetry}
+          className="shrink-0 rounded-md border border-black/15 px-2.5 py-1 text-xs font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+        >
+          {busy ? 'Retrying…' : 'Retry'}
         </button>
       )}
     </li>
