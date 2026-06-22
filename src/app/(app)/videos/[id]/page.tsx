@@ -117,6 +117,7 @@ export default async function VideoEditorPage({
     <div className="space-y-6">
       <Editor
         videoId={id}
+        channelId={video.channel_id as string}
         title={video.title as string}
         initialScenes={scenes}
         initialStatus={(job?.status as string | null) ?? null}

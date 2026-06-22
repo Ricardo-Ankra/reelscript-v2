@@ -1,12 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { SceneCard, type Shot, type ResourceOption } from './SceneCard';
 import { setShotResource } from './shot-actions';
 import { estimateSynthesisCost } from '@/lib/voice/estimate';
 import { synthesizeScenes, getSceneAudioUrl } from './voice-actions';
 import { startVideoRender, getRenderState } from './render-actions';
+import { retryGeneration } from './regenerate-actions';
+import { deleteVideo } from './delete-actions';
 import { MusicPanel } from './MusicPanel';
 import { VideoSettingsPanel } from './VideoSettingsPanel';
 
@@ -27,6 +30,7 @@ const SYNTH_TARGET = new Set(['not_synthesized', 'stale']);
 
 export function Editor({
   videoId,
+  channelId,
   title,
   initialScenes,
   initialStatus,
@@ -38,6 +42,7 @@ export function Editor({
   initialRenderUrl = null,
 }: {
   videoId: string;
+  channelId: string;
   title: string;
   initialScenes: SceneWithShots[];
   initialStatus: string | null;
@@ -63,6 +68,32 @@ export function Editor({
   const [renderUrl, setRenderUrl] = useState<string | null>(initialRenderUrl);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [renderElapsed, setRenderElapsed] = useState(0); // seconds, ticked while active
+
+  const router = useRouter();
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+
+  const onRetry = useCallback(async () => {
+    setRecoveryBusy(true);
+    setRecoveryError(null);
+    const res = await retryGeneration(videoId);
+    if (!res.ok) setRecoveryError(res.reason);
+    // On success the jobs Realtime flips status to queued/running and the banner clears.
+    setRecoveryBusy(false);
+  }, [videoId]);
+
+  const onDelete = useCallback(async () => {
+    if (!confirm('Delete this video? This permanently removes its scenes, audio, and renders.')) return;
+    setRecoveryBusy(true);
+    setRecoveryError(null);
+    const res = await deleteVideo(videoId);
+    if (res.ok) {
+      router.push(`/channels/${channelId}`); // leaves this route; keep busy
+      return;
+    }
+    setRecoveryError(res.reason);
+    setRecoveryBusy(false);
+  }, [videoId, channelId, router]);
 
   // Echo-guard: scenes with an in-flight/pending edit. While a scene id is here,
   // Realtime UPDATEs for it are ignored so we don't clobber the textarea.
@@ -363,8 +394,38 @@ export function Editor({
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">{title}</h1>
-        <StatusPill status={status} />
+        <div className="flex items-center gap-3">
+          <StatusPill status={status} />
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={recoveryBusy}
+            className="rounded-md border border-red-500/40 px-2.5 py-1 text-xs font-medium text-red-600 enabled:hover:bg-red-500/10 disabled:opacity-40"
+          >
+            Delete video
+          </button>
+        </div>
       </div>
+
+      {(status === 'failed' || status === 'cancelled') && (
+        <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+          <p>
+            {status === 'cancelled' ? 'Generation was cancelled.' : 'Generation failed.'} Retry to run
+            it again with the same prompt, or delete the video.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onRetry}
+              disabled={recoveryBusy}
+              className="rounded-md border border-black/15 px-2.5 py-1 text-xs font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+            >
+              {recoveryBusy ? 'Working…' : 'Retry generation'}
+            </button>
+          </div>
+          {recoveryError && <p className="text-xs text-red-600">{recoveryError}</p>}
+        </div>
+      )}
 
       {ordered.length > 0 && (
         <div className="flex items-center justify-between rounded-lg border border-black/10 bg-black/[0.015] px-3 py-2 text-xs dark:border-white/10 dark:bg-white/[0.02]">
@@ -490,14 +551,18 @@ function StatusPill({ status }: { status: string | null }) {
       ? 'Generated'
       : status === 'failed'
         ? 'Generation failed'
-        : ACTIVE.has(status)
-          ? 'Generating…'
-          : status;
+        : status === 'cancelled'
+          ? 'Cancelled'
+          : ACTIVE.has(status)
+            ? 'Generating…'
+            : status;
   const tone =
     status === 'failed'
       ? 'border-red-500/40 bg-red-500/10 text-red-600'
-      : status === 'complete'
-        ? 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400'
-        : 'border-black/15 bg-black/[0.03] opacity-70 dark:border-white/15 dark:bg-white/[0.03]';
+      : status === 'cancelled'
+        ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+        : status === 'complete'
+          ? 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400'
+          : 'border-black/15 bg-black/[0.03] opacity-70 dark:border-white/15 dark:bg-white/[0.03]';
   return <span className={`rounded-full border px-2.5 py-1 text-xs ${tone}`}>{label}</span>;
 }
