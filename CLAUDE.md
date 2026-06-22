@@ -107,6 +107,28 @@ authoritative and the `docs/` copy remains the design record.
     `npm run inspect:video <id>` helpers (a stuck "Generating" job traced to Inngest
     dev-server port drift), and the video editor now **loads the latest render on open**
     so a previously-rendered video is watchable without re-rendering.
+  - **Video recovery — retry generation + delete video (2026-06-22):** closes the
+    create→cancel dead-end. **Retry** re-runs a `failed`/`cancelled` script generation
+    in place — `retryGeneration(videoId)` reads the video's stored prompt +
+    `settings.target_length` and delegates to the existing
+    `regenerateVideo(videoId, {prompt, targetLengthSeconds})` (`replace:true` wipes
+    partial scenes; the in-flight guard is reused, not duplicated; empty prompt → friendly
+    error, never fabricated). **Delete** (the first delete-video capability anywhere) —
+    `deleteVideo(videoId)` (`src/app/(app)/videos/[id]/delete-actions.ts`): account-scoped,
+    refuses while a job is `queued`/`running` ("Cancel the running job before deleting."),
+    best-effort R2 cleanup of scene audio (`audio/<sceneId>.mp3`) + render
+    `output_r2_key`/`base_output_r2_key`/`composition_spec_r2_key` (**NOT `music_remux_key`**
+    — a cache hash, not an R2 key; each delete try/catch'd, never fatal), then a dual-keyed
+    row delete; the FK cascade removes scenes/shots/renders/jobs/script_revisions and
+    `cost_events.video_id` → NULL (ledger preserved). Pure `isRetryable(type, status)` =
+    `script_generation && (failed||cancelled)` drives the affordances. **Placement:** editor
+    recovery banner (Retry) + header Delete (→ `/channels/<channelId>`, new `channelId`
+    prop), `cancelled` StatusPill label (amber); `/jobs` Retry on retryable
+    `script_generation` rows; channel Videos list per-row Delete (`DeleteVideoButton`, row
+    restructured so the button isn't nested in the `<Link>`). **No schema change** (the
+    `cancelled` enum + cascade already existed). 6 tasks subagent-driven, final Opus review
+    READY TO MERGE; 329 tests + tsc + lint + build(17/17) green. Design:
+    `docs/superpowers/specs/2026-06-21-video-recovery-retry-delete-design.md`.
   - **Caption emphasis revision (2026-06-16):** **kinetic text is now folded into the
     caption track — there is no longer a separate kinetic track.** The caption track
     builds word-by-word (DOAC-style) off the same `scenes.word_alignments` timing, and
