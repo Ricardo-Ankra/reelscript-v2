@@ -16,6 +16,7 @@ import { LogosEditor } from './LogosEditor';
 import { ResourcesEditor, type ResourceItem } from './ResourcesEditor';
 import { ChannelTabs } from './ChannelTabs';
 import { deriveVideoStatus } from '@/lib/videos/status';
+import { DeleteVideoButton } from './DeleteVideoButton';
 
 // Tabbed channel page. Videos (default) lists this channel's videos with a derived
 // status + the sole "New video" entry; Settings holds the six brand/format editors.
@@ -137,17 +138,18 @@ async function VideosTab({
             });
             const created = new Date(v.created_at as string).toLocaleDateString();
             return (
-              <li key={vid}>
-                <Link
-                  href={`/videos/${vid}`}
-                  className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-black/5 dark:hover:bg-white/5"
-                >
+              <li
+                key={vid}
+                className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-black/5 dark:hover:bg-white/5"
+              >
+                <Link href={`/videos/${vid}`} className="flex min-w-0 flex-1 items-center justify-between gap-3">
                   <span className="min-w-0 flex-1 truncate font-medium">{v.title as string}</span>
                   <span className="shrink-0 rounded-full border border-black/15 px-2 py-0.5 text-xs opacity-70 dark:border-white/15">
                     {label}
                   </span>
                   <span className="shrink-0 opacity-50">{created}</span>
                 </Link>
+                <DeleteVideoButton videoId={vid} />
               </li>
             );
           })}
