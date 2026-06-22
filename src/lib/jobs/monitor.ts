@@ -11,6 +11,12 @@ export function isCancellable(status: string): boolean {
   return (ACTIVE_JOB_STATUSES as readonly string[]).includes(status);
 }
 
+// A failed or cancelled script-generation job can be re-run in place. (Render
+// "retry" is the editor's Generate Video; voice/deploy retry is out of scope.)
+export function isRetryable(type: string, status: string): boolean {
+  return type === 'script_generation' && (status === 'failed' || status === 'cancelled');
+}
+
 const LABELS: Record<string, string> = {
   queued: 'Queued',
   running: 'Running',

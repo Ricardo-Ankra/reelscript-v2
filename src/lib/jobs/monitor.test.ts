@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isCancellable,
+  isRetryable,
   jobStatusLabel,
   partitionJobs,
   ACTIVE_JOB_STATUSES,
@@ -41,4 +42,16 @@ test('partitionJobs: active (by created desc) vs recent (by updated desc)', () =
   const { active, recent } = partitionJobs(rows);
   assert.deepEqual(active.map((r) => r.id), ['c', 'a']); // created desc
   assert.deepEqual(recent.map((r) => r.id), ['d', 'b']); // updated desc
+});
+
+test('isRetryable: only failed/cancelled script_generation', () => {
+  assert.equal(isRetryable('script_generation', 'failed'), true);
+  assert.equal(isRetryable('script_generation', 'cancelled'), true);
+  for (const s of ['queued', 'running', 'complete', 'paused']) {
+    assert.equal(isRetryable('script_generation', s), false);
+  }
+  for (const t of ['render', 'voice_synthesis', 'primitive_deploy']) {
+    assert.equal(isRetryable(t, 'failed'), false);
+    assert.equal(isRetryable(t, 'cancelled'), false);
+  }
 });
