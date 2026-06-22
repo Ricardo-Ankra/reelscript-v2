@@ -7,6 +7,7 @@ import {
   buildBrandContext,
   validateRegenerateInput,
 } from '@/lib/videos/regenerate';
+import { parseVideoSettings } from '@/lib/videos/settings';
 
 const IN_PROGRESS = 'A job is already in progress for this video.';
 
@@ -84,4 +85,26 @@ export async function regenerateVideo(
   });
 
   return { ok: true };
+}
+
+// One-click retry of a failed/cancelled generation: re-run script generation with
+// the video's STORED prompt + length (no operator input). Delegates to
+// regenerateVideo (replace:true), which guards an in-flight job and wipes any
+// partial scenes from the cancelled run.
+export async function retryGeneration(
+  videoId: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const supabase = await createClient();
+  const { data: video } = await supabase
+    .from('videos')
+    .select('prompt, settings')
+    .eq('id', videoId)
+    .maybeSingle();
+  if (!video) return { ok: false, reason: 'Video not found.' };
+
+  const prompt = typeof video.prompt === 'string' ? video.prompt.trim() : '';
+  if (!prompt) return { ok: false, reason: 'This video has no prompt to retry.' };
+
+  const targetLengthSeconds = parseVideoSettings(video.settings).target_length;
+  return regenerateVideo(videoId, { prompt, targetLengthSeconds });
 }
