@@ -104,6 +104,19 @@ generation-ready property.
 
 ### 2. The resolver becomes a provider registry
 
+> **Update (2026-06-22, during C2 planning):** the literal `AssetProvider` provider
+> registry below is **superseded / dropped as YAGNI.** Tracing the live code showed
+> resolution is already three separated paths orchestrated in `render.ts` (pinned
+> resources → `resolveResourceAssets`; stock → the agentic vision loop; procedural →
+> primitives) — the agentic loop already *is* the router, and Slice B (pins) + C1
+> (brief + gate) already deliver "prefer the attached asset." **C2 instead = brief-driven
+> composition:** surface each shot's structured `VisualBrief` into the compose prompt
+> (an enriched, self-describing shot hint with an explicit *entity* directive) so the
+> composition AI writes better stock queries and never substitutes generic stock for a
+> specific entity. Generation (Slice D) becomes "add a generate path in `render.ts`
+> alongside the existing three," which the brief already enables — no registry needed.
+> The original registry sketch is kept below as the design record.
+
 Today's stock path becomes one adapter among several behind a single interface:
 
 ```ts
