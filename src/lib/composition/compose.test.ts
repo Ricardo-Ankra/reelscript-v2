@@ -10,6 +10,7 @@ import {
   buildStockToolResult,
   collectReferencedAssetIds,
   planStockResolution,
+  formatShotHint,
   SEARCH_STOCK_TOOL,
   type CompositionBrief,
   type ModelTurn,
@@ -359,4 +360,81 @@ test('user prompt emits a PINNED directive for scenes with pinnedResources, omit
   assert.ok(u.includes('brand logo on white'));
   assert.equal(u.match(/PINNED/g)?.length, 1); // only scene-1 has a pin
   assert.ok(!buildCompositionUserPrompt(brief).includes('PINNED')); // no pins → no directive
+});
+
+// --- formatShotHint tests ----
+
+test('formatShotHint: null brief returns the description unchanged', () => {
+  assert.equal(formatShotHint(null, 'a city street at night'), 'a city street at night');
+});
+
+test('formatShotHint: generic brief renders core + framing/mood, no entity suffix', () => {
+  const hint = formatShotHint(
+    {
+      subject: 'a city street',
+      action: 'cars passing',
+      setting: 'night, rain',
+      framing: 'wide',
+      mood: 'moody',
+      specificity: 'generic',
+      entity_name: null,
+      recommended_source: 'stock',
+    },
+    'fallback',
+  );
+  assert.equal(hint, 'a city street, cars passing, night, rain (wide; moody)');
+  assert.ok(!hint.includes('SPECIFIC ENTITY'));
+});
+
+test('formatShotHint: entity brief appends the named entity directive', () => {
+  const hint = formatShotHint(
+    {
+      subject: 'Rivian R2',
+      action: 'driving',
+      setting: 'coastal road',
+      framing: '',
+      mood: '',
+      specificity: 'entity',
+      entity_name: 'Rivian R2',
+      recommended_source: 'upload',
+    },
+    'fallback',
+  );
+  assert.match(hint, /^Rivian R2, driving, coastal road/);
+  assert.match(hint, /SPECIFIC ENTITY \("Rivian R2"\)/);
+  assert.match(hint, /do not substitute generic stock/);
+});
+
+test('formatShotHint: entity brief without a name uses the generic entity phrase', () => {
+  const hint = formatShotHint(
+    {
+      subject: 's',
+      action: '',
+      setting: '',
+      framing: '',
+      mood: '',
+      specificity: 'entity',
+      entity_name: null,
+      recommended_source: 'upload',
+    },
+    'fallback',
+  );
+  assert.match(hint, /SPECIFIC ENTITY \(a specific named entity\)/);
+});
+
+test('formatShotHint: brief with all-empty descriptive fields falls back to the description', () => {
+  const hint = formatShotHint(
+    {
+      subject: '',
+      action: '',
+      setting: '',
+      framing: '',
+      mood: '',
+      specificity: 'generic',
+      entity_name: null,
+      recommended_source: 'stock',
+    },
+    'fallback desc',
+  );
+  assert.equal(hint, 'fallback desc');
 });

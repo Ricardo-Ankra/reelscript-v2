@@ -17,6 +17,7 @@ import type {
 } from './spec';
 import type { StockCandidate, StockSearchParams } from '../assets/candidate';
 import type { CaptionFocus } from '../captions/types';
+import type { VisualBrief } from '@/lib/videos/visual-brief';
 
 const CAPTION_FOCUSES: readonly CaptionFocus[] = ['visual', 'text', 'balanced'];
 
@@ -180,6 +181,27 @@ export function buildCompositionSystemPrompt(
     ']}]}',
     '(captionFocus is optional — omit it for "balanced".)',
   ].join('\n');
+}
+
+// Render one shot's intent for the composition prompt. With a visual brief (Slice C1)
+// it produces a richer, entity-aware hint than the terse description: subject/action/
+// setting as the core, framing/mood as qualifiers, and — for a specific named entity —
+// an explicit directive to use the pinned/uploaded asset rather than generic stock.
+// A null brief (legacy/unbriefed shot) returns the description unchanged.
+export function formatShotHint(brief: VisualBrief | null, description: string): string {
+  if (!brief) return description;
+  const core =
+    [brief.subject, brief.action, brief.setting]
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .join(', ') || description.trim();
+  const qualifiers = [brief.framing, brief.mood].map((p) => p.trim()).filter(Boolean);
+  let hint = qualifiers.length ? `${core} (${qualifiers.join('; ')})` : core;
+  if (brief.specificity === 'entity') {
+    const name = brief.entity_name ? `"${brief.entity_name}"` : 'a specific named entity';
+    hint += ` — SPECIFIC ENTITY (${name}): use the pinned/uploaded asset if present; do not substitute generic stock.`;
+  }
+  return hint || description;
 }
 
 export function buildCompositionUserPrompt(brief: CompositionBrief): string {
