@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client';
 import { partitionJobs, jobStatusLabel, isCancellable, isRetryable, type JobRow } from '@/lib/jobs/monitor';
 import { cancelJob, loadJobs } from './actions';
 import { retryGeneration } from '../videos/[id]/regenerate-actions';
+import { parseRenderError } from '@/lib/errors/render-error';
+import { RenderErrorCard } from '@/components/RenderErrorCard';
 
 export function JobsList({ initial }: { initial: JobRow[] }) {
   const supabase = useMemo(() => createClient(), []);
@@ -114,42 +116,46 @@ function JobItem({
   onRetry?: () => void;
 }) {
   const phase = job.phase ? ` · ${job.phase}` : '';
+  const showError = job.status !== 'cancelled' && job.error != null;
   return (
-    <li className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="font-medium">{job.type}</span>
-          {job.videoId && job.videoTitle && (
-            <Link href={`/videos/${job.videoId}`} className="truncate underline opacity-70 hover:opacity-100">
-              {job.videoTitle}
-            </Link>
-          )}
+    <li className="space-y-2 px-4 py-3 text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{job.type}</span>
+            {job.videoId && job.videoTitle && (
+              <Link href={`/videos/${job.videoId}`} className="truncate underline opacity-70 hover:opacity-100">
+                {job.videoTitle}
+              </Link>
+            )}
+          </div>
+          <div className="text-xs opacity-60">
+            {jobStatusLabel(job.status)}
+            {phase} · {relativeAge(job.createdAt)}
+          </div>
         </div>
-        <div className="text-xs opacity-60">
-          {jobStatusLabel(job.status)}
-          {phase} · {relativeAge(job.createdAt)}
-        </div>
+        {onCancel && isCancellable(job.status) && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            className="shrink-0 rounded-md border border-red-500/40 px-2.5 py-1 text-xs font-medium text-red-600 enabled:hover:bg-red-500/10 disabled:opacity-40"
+          >
+            {busy ? 'Cancelling…' : 'Cancel'}
+          </button>
+        )}
+        {onRetry && isRetryable(job.type, job.status) && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onRetry}
+            className="shrink-0 rounded-md border border-black/15 px-2.5 py-1 text-xs font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+          >
+            {busy ? 'Retrying…' : 'Retry'}
+          </button>
+        )}
       </div>
-      {onCancel && isCancellable(job.status) && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onCancel}
-          className="shrink-0 rounded-md border border-red-500/40 px-2.5 py-1 text-xs font-medium text-red-600 enabled:hover:bg-red-500/10 disabled:opacity-40"
-        >
-          {busy ? 'Cancelling…' : 'Cancel'}
-        </button>
-      )}
-      {onRetry && isRetryable(job.type, job.status) && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onRetry}
-          className="shrink-0 rounded-md border border-black/15 px-2.5 py-1 text-xs font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
-        >
-          {busy ? 'Retrying…' : 'Retry'}
-        </button>
-      )}
+      {showError && <RenderErrorCard error={parseRenderError(job.error)} />}
     </li>
   );
 }
