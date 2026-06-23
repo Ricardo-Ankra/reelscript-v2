@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { SceneAssetUploader } from './SceneAssetUploader';
+import { sceneAttachedResources } from '@/lib/resources/scene-tray';
 
 export type Shot = {
   id: string;
@@ -68,6 +69,7 @@ export function SceneCard({
   };
 
   const dot = audioDot(audioStatus, synthesizing);
+  const attached = sceneAttachedResources(shots, resources);
 
   return (
     <div className="relative rounded-xl border border-black/15 bg-black/[0.015] p-4 shadow-sm dark:border-white/15 dark:bg-white/[0.02]">
@@ -92,6 +94,22 @@ export function SceneCard({
         rows={2}
         className="w-full resize-y rounded-md border border-transparent bg-transparent p-2 text-sm leading-relaxed outline-none focus:border-black/20 dark:focus:border-white/20"
       />
+
+      {/* Attached assets tray — derived from shots that have a resource pinned */}
+      {attached.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-black/5 pt-2 text-[10px] dark:border-white/5">
+          <span className="opacity-50">Attached:</span>
+          {attached.map((a) => (
+            <span
+              key={a.shotId}
+              className="rounded-full border border-black/10 px-1.5 py-px opacity-70 dark:border-white/10"
+              title={`Shot ${a.shotPosition}: ${a.resource.description || '(untitled)'}`}
+            >
+              {(a.resource.description || '(untitled)').slice(0, 24)} ({a.resource.kind}) · shot {a.shotPosition}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Shots — read-only, muted, clearly subordinate */}
       {shots.length > 0 && (
