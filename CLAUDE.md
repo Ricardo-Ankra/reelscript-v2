@@ -129,6 +129,35 @@ authoritative and the `docs/` copy remains the design record.
     `cancelled` enum + cascade already existed). 6 tasks subagent-driven, final Opus review
     READY TO MERGE; 329 tests + tsc + lint + build(17/17) green. Design:
     `docs/superpowers/specs/2026-06-21-video-recovery-retry-delete-design.md`.
+  - **Asset model overhaul — program (design 2026-06-22):** a 4-slice program to fix
+    asset reliability + workflow, triggered by a Gate-2 failure (stock returned a white
+    Jeep for a "Rivian R2" shot; vision QA caught it but the flow dead-ended). **Insight:
+    reliability is a routing problem** — stock *and* text-to-video both hallucinate
+    specific named entities; route by a per-shot `specificity` class instead. The spine:
+    an editable **VisualBrief** on shots (subject/action/setting/framing/mood/specificity/
+    entity_name/recommended_source, authored at script time), a **provider-registry
+    resolver** with a specificity-ordered fallback ladder (upload→stock→generate→primitive),
+    a `generated` `shot_source` value, and an **editor-side readiness gate** (fail-forward —
+    block Generate Video on unresolved `entity` shots, with Gate-2 vision QA as the
+    backstop). Slices **A→B→C→D**: A formatted errors (done, below); B scene asset tray +
+    operator upload; C visual brief authoring + resolver router + readiness gate; D
+    generation providers (Heygen/Higgsfield/text-to-image) registered behind the resolver
+    later, no pipeline change. Design:
+    `docs/superpowers/specs/2026-06-22-asset-model-overhaul-design.md`.
+    - **Slice A — formatted composition/render errors (2026-06-22):** render/composition
+      errors now render as a card (phase badge + message + QA issues + smoke frame inline)
+      instead of raw JSON, in the editor and on `/jobs`. Pure `parseRenderError(unknown)` +
+      `phaseLabel` (`src/lib/errors/render-error.ts`, never-throws, normalizes the structured
+      `{phase,issues[],message,frameUrl}` object OR a plain string); shared
+      `RenderErrorCard` (`src/components/`). **Root-cause fix:** `getRenderState` stopped
+      `JSON.stringify`-ing the error (returns `error: unknown`); editor `renderError` state
+      is now `ParsedRenderError`; `/jobs` renders each row's already-loaded `error` (guarded
+      `status !== 'cancelled' && error != null`). A discovered 3rd `getRenderState` caller
+      (`MusicPanel`) got a minimal `typeof string` guard. 4 tasks subagent-driven, final
+      Opus review READY TO MERGE; 336 tests + tsc + lint + build(17/17) green. No schema
+      change. (Follow-up: a *cancelled* render in the editor shows the generic fallback —
+      cancel writes `{cancelled:true}` with no `message`; nicer "Cancelled" copy is a future
+      nicety, not a regression.)
   - **Caption emphasis revision (2026-06-16):** **kinetic text is now folded into the
     caption track — there is no longer a separate kinetic track.** The caption track
     builds word-by-word (DOAC-style) off the same `scenes.word_alignments` timing, and
