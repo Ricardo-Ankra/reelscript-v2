@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { SceneCard, type Shot, type ResourceOption } from './SceneCard';
-import { setShotResource } from './shot-actions';
+import { setShotResource, setShotVisualBrief } from './shot-actions';
 import { estimateSynthesisCost } from '@/lib/voice/estimate';
 import { synthesizeScenes, getSceneAudioUrl } from './voice-actions';
 import { startVideoRender, getRenderState } from './render-actions';
@@ -14,6 +14,8 @@ import { MusicPanel } from './MusicPanel';
 import { VideoSettingsPanel } from './VideoSettingsPanel';
 import { parseRenderError, type ParsedRenderError } from '@/lib/errors/render-error';
 import { RenderErrorCard } from '@/components/RenderErrorCard';
+import { parseVisualBrief, type VisualBrief } from '@/lib/videos/visual-brief';
+import { shotReadiness } from '@/lib/videos/shot-readiness';
 
 export type SceneWithShots = {
   id: string;
@@ -79,6 +81,9 @@ export function Editor({
   // shot picker immediately (the prop is the load-time snapshot).
   const [liveResources, setLiveResources] = useState<ResourceOption[]>(resources);
 
+  // Shots the operator chose to render anyway despite the readiness gate.
+  const [acceptedShots, setAcceptedShots] = useState<Set<string>>(new Set());
+
   const onRetry = useCallback(async () => {
     setRecoveryBusy(true);
     setRecoveryError(null);
@@ -113,12 +118,21 @@ export function Editor({
     async (sceneId: string) => {
       const { data } = await supabase
         .from('shots')
-        .select('id, position, description, source, stock_query, resource_id')
+        .select('id, position, description, source, stock_query, resource_id, visual_brief')
         .eq('scene_id', sceneId)
         .order('position');
       if (!data) return;
+      const shots: Shot[] = data.map((row) => ({
+        id: row.id as string,
+        position: row.position as number,
+        description: row.description as string,
+        source: row.source as string,
+        stock_query: (row.stock_query as string | null) ?? null,
+        resource_id: (row.resource_id as string | null) ?? null,
+        visual_brief: parseVisualBrief(row.visual_brief),
+      }));
       setScenes((prev) =>
-        prev.map((s) => (s.id === sceneId ? { ...s, shots: data as Shot[] } : s)),
+        prev.map((s) => (s.id === sceneId ? { ...s, shots } : s)),
       );
     },
     [supabase],
@@ -141,12 +155,20 @@ export function Editor({
     if (ids.length) {
       const { data: shotRows } = await supabase
         .from('shots')
-        .select('id, scene_id, position, description, source, stock_query, resource_id')
+        .select('id, scene_id, position, description, source, stock_query, resource_id, visual_brief')
         .in('scene_id', ids)
         .order('position');
       for (const sh of shotRows ?? []) {
         const list = shotsByScene.get(sh.scene_id as string) ?? [];
-        list.push(sh as unknown as Shot);
+        list.push({
+          id: sh.id as string,
+          position: sh.position as number,
+          description: sh.description as string,
+          source: sh.source as string,
+          stock_query: (sh.stock_query as string | null) ?? null,
+          resource_id: (sh.resource_id as string | null) ?? null,
+          visual_brief: parseVisualBrief(sh.visual_brief),
+        });
         shotsByScene.set(sh.scene_id as string, list);
       }
     }
@@ -329,6 +351,17 @@ export function Editor({
     [],
   );
 
+  const onSetShotBrief = useCallback(async (shotId: string, brief: VisualBrief) => {
+    const res = await setShotVisualBrief(shotId, brief);
+    if (!res.ok) return;
+    setScenes((prev) =>
+      prev.map((s) => ({
+        ...s,
+        shots: s.shots.map((sh) => (sh.id === shotId ? { ...sh, visual_brief: brief } : sh)),
+      })),
+    );
+  }, []);
+
   // Upload-and-attach: add the freshly-uploaded resource to the live list (so every
   // picker sees it) and pin it to the shot via the existing setShotResource path.
   const onUploadAndAttach = useCallback(
@@ -397,7 +430,15 @@ export function Editor({
   const unsynthesized = scenes.filter((s) => s.audio_status === 'not_synthesized').length;
   const renderActive =
     renderStatus != null && renderStatus !== 'complete' && renderStatus !== 'failed';
-  const canRender = scenes.length > 0 && unsynthesized === 0 && !renderActive;
+
+  // Shots that depict a specific entity with no attached asset (and not overridden).
+  const unresolvedShots = scenes
+    .flatMap((s) => s.shots)
+    .map((sh) => ({ shot: sh, readiness: shotReadiness({ brief: sh.visual_brief, source: sh.source, resourceId: sh.resource_id }) }))
+    .filter((x) => !x.readiness.resolved && !acceptedShots.has(x.shot.id));
+
+  const canRender =
+    scenes.length > 0 && unsynthesized === 0 && !renderActive && unresolvedShots.length === 0;
 
   // Tick the elapsed-seconds counter once a second while a render is active.
   useEffect(() => {
@@ -465,6 +506,36 @@ export function Editor({
         <VideoSettingsPanel videoId={videoId} initialSettings={initialSettings} initialPrompt={initialPrompt} />
       )}
 
+      {ordered.length > 0 && unresolvedShots.length > 0 && (
+        <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+          <p className="font-medium">
+            {unresolvedShots.length} shot{unresolvedShots.length === 1 ? '' : 's'} need an attached
+            asset before rendering.
+          </p>
+          <ul className="space-y-1 text-xs">
+            {unresolvedShots.map(({ shot, readiness }) => (
+              <li key={shot.id} className="flex items-center justify-between gap-2">
+                <span className="min-w-0 flex-1 truncate">
+                  {shot.visual_brief?.entity_name || shot.description || 'Shot'} —{' '}
+                  {readiness.resolved ? '' : readiness.reason}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAcceptedShots((p) => new Set(p).add(shot.id))}
+                  className="shrink-0 rounded-md border border-black/15 px-2 py-0.5 font-medium enabled:hover:bg-black/[0.04] dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+                  title="Render anyway with stock/fallback for this shot"
+                >
+                  Accept anyway
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs opacity-70">
+            Upload footage on the shot to resolve it, or accept to render with a fallback.
+          </p>
+        </div>
+      )}
+
       {ordered.length > 0 && (
         <div className="space-y-2 rounded-lg border border-black/10 bg-black/[0.015] px-3 py-2 dark:border-white/10 dark:bg-white/[0.02]">
           <div className="flex items-center justify-between text-xs">
@@ -526,6 +597,7 @@ export function Editor({
               channelId={channelId}
               onSetShotResource={onSetShotResource}
               onUploadAndAttach={onUploadAndAttach}
+              onSetShotBrief={onSetShotBrief}
             />
           ))}
         </div>

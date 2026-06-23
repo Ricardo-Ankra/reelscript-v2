@@ -5,6 +5,7 @@ import { Editor, type SceneWithShots } from './Editor';
 import type { Shot } from './SceneCard';
 import { VideoCostsPanel } from './VideoCostsPanel';
 import type { CostEvent } from '@/lib/costs/aggregate';
+import { parseVisualBrief } from '@/lib/videos/visual-brief';
 
 // Editor server component: first paint of the video + any scenes/shots already
 // written. The client Editor then subscribes to Realtime for streaming inserts
@@ -43,7 +44,7 @@ export default async function VideoEditorPage({
   if (scenes.length > 0) {
     const { data: shotRows } = await supabase
       .from('shots')
-      .select('id, scene_id, position, description, source, stock_query, resource_id')
+      .select('id, scene_id, position, description, source, stock_query, resource_id, visual_brief')
       .in(
         'scene_id',
         scenes.map((s) => s.id),
@@ -59,6 +60,7 @@ export default async function VideoEditorPage({
         source: row.source as string,
         stock_query: (row.stock_query as string | null) ?? null,
         resource_id: (row.resource_id as string | null) ?? null,
+        visual_brief: parseVisualBrief(row.visual_brief),
       });
       byScene.set(row.scene_id as string, list);
     }
