@@ -75,6 +75,10 @@ export function Editor({
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
+  // Live copy of the channel's resources so an in-editor upload appears in every
+  // shot picker immediately (the prop is the load-time snapshot).
+  const [liveResources, setLiveResources] = useState<ResourceOption[]>(resources);
+
   const onRetry = useCallback(async () => {
     setRecoveryBusy(true);
     setRecoveryError(null);
@@ -325,6 +329,16 @@ export function Editor({
     [],
   );
 
+  // Upload-and-attach: add the freshly-uploaded resource to the live list (so every
+  // picker sees it) and pin it to the shot via the existing setShotResource path.
+  const onUploadAndAttach = useCallback(
+    async (shotId: string, resource: ResourceOption) => {
+      setLiveResources((xs) => (xs.some((r) => r.id === resource.id) ? xs : [resource, ...xs]));
+      await onSetShotResource(shotId, resource.id);
+    },
+    [onSetShotResource],
+  );
+
   // Generate Video: snapshot + compose + render. Handles the completeness gate —
   // a stale-scenes block prompts for an explicit override (honest mismatch).
   const handleGenerate = useCallback(async () => {
@@ -508,8 +522,10 @@ export function Editor({
               onChange={(text) => onNarrationChange(scene.id, text)}
               onSynthesize={() => runSynthesis([scene.id], [scene.id])}
               getAudioUrl={() => getAudioUrl(scene.id)}
-              resources={resources}
+              resources={liveResources}
+              channelId={channelId}
               onSetShotResource={onSetShotResource}
+              onUploadAndAttach={onUploadAndAttach}
             />
           ))}
         </div>

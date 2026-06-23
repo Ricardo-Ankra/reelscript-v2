@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { SceneAssetUploader } from './SceneAssetUploader';
 
 export type Shot = {
   id: string;
@@ -31,7 +32,9 @@ export function SceneCard({
   onSynthesize,
   getAudioUrl,
   resources,
+  channelId,
   onSetShotResource,
+  onUploadAndAttach,
 }: {
   position: number;
   narration: string;
@@ -44,7 +47,9 @@ export function SceneCard({
   onSynthesize: () => void;
   getAudioUrl: () => Promise<string | null>;
   resources: ResourceOption[];
+  channelId: string;
   onSetShotResource: (shotId: string, resourceId: string | null) => void;
+  onUploadAndAttach: (shotId: string, resource: ResourceOption) => void;
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [loadingAudio, setLoadingAudio] = useState(false);
@@ -98,7 +103,7 @@ export function SceneCard({
               <li key={shot.id} className="flex items-start gap-2 text-xs opacity-60">
                 <span className="opacity-70">▸</span>
                 <span className="flex-1">{shot.description}</span>
-                {resources.length > 0 ? (
+                {resources.length > 0 && (
                   <select
                     value={shot.resource_id ?? ''}
                     onChange={(e) => onSetShotResource(shot.id, e.target.value || null)}
@@ -112,11 +117,11 @@ export function SceneCard({
                       </option>
                     ))}
                   </select>
-                ) : (
-                  <span className="rounded-full border border-black/10 px-1.5 py-px text-[10px] dark:border-white/10">
-                    {shot.source}
-                  </span>
                 )}
+                <SceneAssetUploader
+                  channelId={channelId}
+                  onUploaded={(resource) => onUploadAndAttach(shot.id, resource)}
+                />
               </li>
             ))}
         </ul>
