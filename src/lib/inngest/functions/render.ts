@@ -19,11 +19,13 @@ import {
   runAgenticComposition,
   collectReferencedAssetIds,
   planStockResolution,
+  formatShotHint,
   SEARCH_STOCK_TOOL,
   type CompositionBrief,
   type SceneBrief,
   type LoopBlock,
 } from '@/lib/composition/compose';
+import { parseVisualBrief } from '@/lib/videos/visual-brief';
 import { validateSpec, formatGate1Feedback, type Gate1Error } from '@/lib/composition/gate1';
 import type { CompositionSpec, AssetManifestEntry } from '@/lib/composition/spec';
 import { searchStock, resolveStockKeys } from '@/lib/assets/search';
@@ -486,12 +488,12 @@ async function loadBrief(
   if (ids.length) {
     const { data: shotRows } = await admin
       .from('shots')
-      .select('scene_id, description, position, source, resource_id')
+      .select('scene_id, description, position, source, resource_id, visual_brief')
       .in('scene_id', ids)
       .order('position');
     for (const sh of shotRows ?? []) {
       const list = shotsByScene.get(sh.scene_id as string) ?? [];
-      list.push(sh.description as string);
+      list.push(formatShotHint(parseVisualBrief(sh.visual_brief), sh.description as string));
       shotsByScene.set(sh.scene_id as string, list);
       if (sh.source === 'resource' && sh.resource_id) {
         resourceIdSet.add(sh.resource_id as string);
