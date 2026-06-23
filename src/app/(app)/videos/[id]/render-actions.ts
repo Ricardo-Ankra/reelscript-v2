@@ -131,7 +131,7 @@ export async function startVideoRender(
 // Polled/subscribed by the editor; returns a signed playback URL once complete.
 export async function getRenderState(
   renderId: string,
-): Promise<{ status: string; url: string | null; error: string | null }> {
+): Promise<{ status: string; url: string | null; error: unknown }> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('renders')
@@ -146,6 +146,6 @@ export async function getRenderState(
   return {
     status: data.status as string,
     url,
-    error: data.error ? JSON.stringify(data.error) : null,
+    error: data.error ?? null,
   };
 }

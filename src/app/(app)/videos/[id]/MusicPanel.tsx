@@ -48,7 +48,7 @@ export function MusicPanel({ videoId, onUpdated }: { videoId: string; onUpdated?
           return;
         }
         if (s.status === 'failed') {
-          setError(s.error ?? 'Re-mux failed.');
+          setError(typeof s.error === 'string' ? s.error : 'Re-mux failed.');
           setBusy(null);
           return;
         }
