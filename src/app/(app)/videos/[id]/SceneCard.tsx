@@ -1,6 +1,8 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { SceneAssetUploader } from './SceneAssetUploader';
+import { sceneAttachedResources } from '@/lib/resources/scene-tray';
 
 export type Shot = {
   id: string;
@@ -31,7 +33,9 @@ export function SceneCard({
   onSynthesize,
   getAudioUrl,
   resources,
+  channelId,
   onSetShotResource,
+  onUploadAndAttach,
 }: {
   position: number;
   narration: string;
@@ -44,7 +48,9 @@ export function SceneCard({
   onSynthesize: () => void;
   getAudioUrl: () => Promise<string | null>;
   resources: ResourceOption[];
+  channelId: string;
   onSetShotResource: (shotId: string, resourceId: string | null) => void;
+  onUploadAndAttach: (shotId: string, resource: ResourceOption) => void;
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [loadingAudio, setLoadingAudio] = useState(false);
@@ -63,6 +69,7 @@ export function SceneCard({
   };
 
   const dot = audioDot(audioStatus, synthesizing);
+  const attached = sceneAttachedResources(shots, resources);
 
   return (
     <div className="relative rounded-xl border border-black/15 bg-black/[0.015] p-4 shadow-sm dark:border-white/15 dark:bg-white/[0.02]">
@@ -88,6 +95,22 @@ export function SceneCard({
         className="w-full resize-y rounded-md border border-transparent bg-transparent p-2 text-sm leading-relaxed outline-none focus:border-black/20 dark:focus:border-white/20"
       />
 
+      {/* Attached assets tray — derived from shots that have a resource pinned */}
+      {attached.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-black/5 pt-2 text-[10px] dark:border-white/5">
+          <span className="opacity-50">Attached:</span>
+          {attached.map((a) => (
+            <span
+              key={a.shotId}
+              className="rounded-full border border-black/10 px-1.5 py-px opacity-70 dark:border-white/10"
+              title={`Shot ${a.shotPosition}: ${a.resource.description || '(untitled)'}`}
+            >
+              {(a.resource.description || '(untitled)').slice(0, 24)} ({a.resource.kind}) · shot {a.shotPosition}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Shots — read-only, muted, clearly subordinate */}
       {shots.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-black/5 pt-2 dark:border-white/5">
@@ -98,7 +121,7 @@ export function SceneCard({
               <li key={shot.id} className="flex items-start gap-2 text-xs opacity-60">
                 <span className="opacity-70">▸</span>
                 <span className="flex-1">{shot.description}</span>
-                {resources.length > 0 ? (
+                {resources.length > 0 && (
                   <select
                     value={shot.resource_id ?? ''}
                     onChange={(e) => onSetShotResource(shot.id, e.target.value || null)}
@@ -112,11 +135,11 @@ export function SceneCard({
                       </option>
                     ))}
                   </select>
-                ) : (
-                  <span className="rounded-full border border-black/10 px-1.5 py-px text-[10px] dark:border-white/10">
-                    {shot.source}
-                  </span>
                 )}
+                <SceneAssetUploader
+                  channelId={channelId}
+                  onUploaded={(resource) => onUploadAndAttach(shot.id, resource)}
+                />
               </li>
             ))}
         </ul>
