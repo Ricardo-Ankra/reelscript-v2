@@ -61,7 +61,7 @@ test('sceneToRpcArgs: maps to snake_case with nulls for missing fields', () => {
     p_narration: 'Two',
     p_duration_seconds: null,
     p_shots: [
-      { position: 1, description: 'd', source: 'procedural', stock_query: null, duration_seconds: null },
+      { position: 1, description: 'd', source: 'procedural', stock_query: null, duration_seconds: null, visual_brief: null },
     ],
   });
 });
@@ -76,4 +76,104 @@ test('prompts: system demands NDJSON; user includes prompt, channel, and target 
   assert.match(user, /Studio/);
   assert.match(user, /curious/);
   assert.match(user, /30s/);
+});
+
+test('parseSceneLine: accepts a shot visualBrief', () => {
+  const line = JSON.stringify({
+    position: 1,
+    narration: 'The new electric SUV.',
+    shots: [
+      {
+        position: 1,
+        description: 'Rivian R2 driving',
+        source: 'stock',
+        stockQuery: 'electric suv road',
+        visualBrief: {
+          subject: 'Rivian R2',
+          action: 'driving',
+          setting: 'coastal road',
+          framing: 'wide',
+          mood: 'aspirational',
+          specificity: 'entity',
+          entityName: 'Rivian R2',
+          recommendedSource: 'upload',
+        },
+      },
+    ],
+  });
+  const scene = parseSceneLine(line);
+  assert.ok(scene);
+  assert.equal(scene?.shots[0].visualBrief?.specificity, 'entity');
+  assert.equal(scene?.shots[0].visualBrief?.entityName, 'Rivian R2');
+});
+
+test('sceneToRpcArgs: maps visualBrief to snake_case visual_brief', () => {
+  const scene = {
+    position: 1,
+    narration: 'x',
+    shots: [
+      {
+        position: 1,
+        description: 'd',
+        source: 'stock' as const,
+        visualBrief: {
+          subject: 'Rivian R2',
+          action: 'driving',
+          setting: 'road',
+          framing: 'wide',
+          mood: 'calm',
+          specificity: 'entity' as const,
+          entityName: 'Rivian R2',
+          recommendedSource: 'upload' as const,
+        },
+      },
+    ],
+  };
+  const args = sceneToRpcArgs(scene, 'acc', 'vid');
+  assert.deepEqual(args.p_shots[0].visual_brief, {
+    subject: 'Rivian R2',
+    action: 'driving',
+    setting: 'road',
+    framing: 'wide',
+    mood: 'calm',
+    specificity: 'entity',
+    entity_name: 'Rivian R2',
+    recommended_source: 'upload',
+  });
+});
+
+test('sceneToRpcArgs: no visualBrief → visual_brief null', () => {
+  const scene = {
+    position: 1,
+    narration: 'x',
+    shots: [{ position: 1, description: 'd', source: 'stock' as const }],
+  };
+  const args = sceneToRpcArgs(scene, 'acc', 'vid');
+  assert.equal(args.p_shots[0].visual_brief, null);
+});
+
+test('sceneToRpcArgs: entity_name dropped when specificity is not entity', () => {
+  const scene = {
+    position: 1,
+    narration: 'x',
+    shots: [
+      {
+        position: 1,
+        description: 'd',
+        source: 'stock' as const,
+        visualBrief: {
+          subject: 's',
+          action: 'a',
+          setting: '',
+          framing: '',
+          mood: '',
+          specificity: 'generic' as const,
+          entityName: 'Rivian R2',
+          recommendedSource: 'stock' as const,
+        },
+      },
+    ],
+  };
+  const args = sceneToRpcArgs(scene, 'acc', 'vid');
+  assert.equal(args.p_shots[0].visual_brief?.entity_name, null);
 });

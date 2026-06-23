@@ -4,12 +4,28 @@
 import { z } from 'zod';
 
 // --- The shape the model must emit, one scene per NDJSON line ----------------
+
+// The visual brief the model authors per shot (camelCase in AI output; stored
+// snake_case — see sceneToRpcArgs). Drives the editor, the readiness gate, and
+// (slice C2) the resolver router.
+export const generatedVisualBriefSchema = z.object({
+  subject: z.string().default(''),
+  action: z.string().default(''),
+  setting: z.string().default(''),
+  framing: z.string().default(''),
+  mood: z.string().default(''),
+  specificity: z.enum(['generic', 'entity', 'abstract', 'spokesperson']).default('generic'),
+  entityName: z.string().optional(),
+  recommendedSource: z.enum(['stock', 'upload', 'generate', 'primitive']).default('stock'),
+});
+
 export const generatedShotSchema = z.object({
   position: z.number().int().positive(),
   description: z.string().default(''),
   source: z.enum(['stock', 'resource', 'procedural']).default('stock'),
   stockQuery: z.string().optional(),
   durationSeconds: z.number().positive().optional(),
+  visualBrief: generatedVisualBriefSchema.optional(),
 });
 
 export const generatedSceneSchema = z.object({
@@ -97,6 +113,19 @@ export function sceneToRpcArgs(scene: GeneratedScene, accountId: string, videoId
       source: s.source,
       stock_query: s.stockQuery ?? null,
       duration_seconds: s.durationSeconds ?? null,
+      visual_brief: s.visualBrief
+        ? {
+            subject: s.visualBrief.subject,
+            action: s.visualBrief.action,
+            setting: s.visualBrief.setting,
+            framing: s.visualBrief.framing,
+            mood: s.visualBrief.mood,
+            specificity: s.visualBrief.specificity,
+            entity_name:
+              s.visualBrief.specificity === 'entity' ? (s.visualBrief.entityName ?? null) : null,
+            recommended_source: s.visualBrief.recommendedSource,
+          }
+        : null,
     })),
   };
 }
@@ -121,9 +150,20 @@ export function buildSystemPrompt(): string {
     '     "description": what is on screen (the visual intent)',
     '     "source": one of "stock", "resource", or "procedural"',
     '     "stockQuery": a short search query (include only when source is "stock")',
+    '     "visualBrief": a structured description of the shot (author this for EVERY shot):',
+    '        "subject": what is on screen, "action": what happens, "setting": where,',
+    '        "framing": shot type (wide/close-up/aerial/screen-recording/…),',
+    '        "mood": tone/lighting,',
+    '        "specificity": one of "generic" (a generic concept stock can show),',
+    '          "entity" (a SPECIFIC named real product/person/place stock cannot reliably show),',
+    '          "abstract" (branded motion/stylized/data-viz), "spokesperson" (a talking head),',
+    '        "entityName": the exact name (REQUIRED when specificity is "entity"),',
+    '        "recommendedSource": one of "stock", "upload", "generate", "primitive"',
+    '          (use "upload" when specificity is "entity" — only operator footage is reliable).',
     '',
     'Guidance: prefer "stock" for real footage (always give a stockQuery), and',
-    '"procedural" for text/animation/diagrams. Keep 1-3 shots per scene.',
+    '"procedural" for text/animation/diagrams. Keep 1-3 shots per scene. Be honest in',
+    '"specificity": if a shot names a specific real product/person/place, mark it "entity".',
     '',
     'DELIVERY TAGS (optional, use SPARINGLY — at most one or two per scene, only',
     'where they genuinely improve delivery; most scenes need none):',
