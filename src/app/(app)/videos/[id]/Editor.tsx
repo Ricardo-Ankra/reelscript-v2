@@ -12,6 +12,8 @@ import { retryGeneration } from './regenerate-actions';
 import { deleteVideo } from './delete-actions';
 import { MusicPanel } from './MusicPanel';
 import { VideoSettingsPanel } from './VideoSettingsPanel';
+import { parseRenderError, type ParsedRenderError } from '@/lib/errors/render-error';
+import { RenderErrorCard } from '@/components/RenderErrorCard';
 
 export type SceneWithShots = {
   id: string;
@@ -66,7 +68,7 @@ export function Editor({
   const [renderId, setRenderId] = useState<string | null>(initialRenderId);
   const [renderStatus, setRenderStatus] = useState<string | null>(initialRenderStatus);
   const [renderUrl, setRenderUrl] = useState<string | null>(initialRenderUrl);
-  const [renderError, setRenderError] = useState<string | null>(null);
+  const [renderError, setRenderError] = useState<ParsedRenderError | null>(null);
   const [renderElapsed, setRenderElapsed] = useState(0); // seconds, ticked while active
 
   const router = useRouter();
@@ -339,13 +341,13 @@ export function Editor({
       return;
     }
     if (res.blocked === 'unsynthesized_scenes') {
-      setRenderError('Synthesize every scene before rendering.');
+      setRenderError(parseRenderError('Synthesize every scene before rendering.'));
       return;
     }
     // stale_scenes — ask for an explicit override, then retry once.
     if (confirm('Some scenes have stale audio (edited since synthesis). Render with the existing audio anyway?')) {
       const retry = await startVideoRender(videoId, true);
-      if ('blocked' in retry) setRenderError('Render is still blocked.');
+      if ('blocked' in retry) setRenderError(parseRenderError('Render is still blocked.'));
       else begin(retry.renderId);
     }
   }, [videoId]);
@@ -361,7 +363,7 @@ export function Editor({
         if (!active) return;
         setRenderStatus(s.status);
         if (s.url) setRenderUrl(s.url);
-        if (s.status === 'failed') setRenderError(s.error ?? 'Render failed.');
+        if (s.status === 'failed') setRenderError(parseRenderError(s.error ?? 'Render failed.'));
       } catch {
         /* transient; keep polling */
       }
@@ -470,7 +472,7 @@ export function Editor({
               {renderActive ? 'Generating…' : 'Generate Video'}
             </button>
           </div>
-          {renderError && <p className="text-xs text-red-600">{renderError}</p>}
+          {renderError && <RenderErrorCard error={renderError} />}
           {renderUrl && (
             <video
               key={renderUrl}
