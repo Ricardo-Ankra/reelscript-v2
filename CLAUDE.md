@@ -194,6 +194,26 @@ authoritative and the `docs/` copy remains the design record.
       `supabase_migrations.schema_migrations` during migration verification — harmless;
       `delete from supabase_migrations.schema_migrations where version='verify'` if any
       Supabase tooling complains.
+    - **Slice C2 — brief-driven composition (2026-06-22):** the composition AI now receives
+      each shot's structured `VisualBrief` instead of the terse `description`. Pure
+      `formatShotHint(brief, description)` (`src/lib/composition/compose.ts`) renders an
+      enriched hint (subject/action/setting + framing/mood qualifiers) plus, for
+      `specificity==='entity'`, an explicit directive — "SPECIFIC ENTITY (…): use the
+      pinned/uploaded asset if present; do not substitute generic stock." `loadBrief`
+      (`render.ts`) builds each scene's `shotHints` via
+      `formatShotHint(parseVisualBrief(sh.visual_brief), sh.description)`. **The
+      provider-registry from the design was DROPPED as YAGNI** — resolution is already three
+      separated paths in `render.ts` (pins → `resolveResourceAssets`; stock → the agentic
+      vision loop; procedural → primitives), the agentic loop is the router, and Slice B+C1
+      already deliver "prefer the attached asset." So C2 = brief-driven, entity-aware
+      composition (better stock queries, no stock substitution for named entities), a 2-task
+      low-risk change; the compose-prompt structure, agentic/procedural loops, Gates, pins,
+      `needsStock`, and the render path are all unchanged — only the hint *content* is
+      richer. Back-compat: a null/empty brief → the description verbatim (unbriefed videos
+      compose byte-identically). No schema change. Final Opus review READY TO MERGE; 359
+      tests + tsc + lint + build(17/17) green. **The asset-model overhaul program is now
+      A+B+C1+C2 shipped; only Slice D (generation providers — Heygen/Higgsfield/text-to-image,
+      a new generate path in `render.ts` alongside the existing three) remains, deferred.**
   - **Caption emphasis revision (2026-06-16):** **kinetic text is now folded into the
     caption track — there is no longer a separate kinetic track.** The caption track
     builds word-by-word (DOAC-style) off the same `scenes.word_alignments` timing, and
