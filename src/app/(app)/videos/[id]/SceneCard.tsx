@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { SceneAssetUploader } from './SceneAssetUploader';
 import { sceneAttachedResources } from '@/lib/resources/scene-tray';
+import type { VisualBrief } from '@/lib/videos/visual-brief';
 
 export type Shot = {
   id: string;
@@ -11,6 +12,7 @@ export type Shot = {
   source: string;
   stock_query: string | null;
   resource_id: string | null;
+  visual_brief: VisualBrief | null;
 };
 
 export type ResourceOption = { id: string; kind: string; description: string };

@@ -14,6 +14,7 @@ import { MusicPanel } from './MusicPanel';
 import { VideoSettingsPanel } from './VideoSettingsPanel';
 import { parseRenderError, type ParsedRenderError } from '@/lib/errors/render-error';
 import { RenderErrorCard } from '@/components/RenderErrorCard';
+import { parseVisualBrief } from '@/lib/videos/visual-brief';
 
 export type SceneWithShots = {
   id: string;
@@ -113,12 +114,21 @@ export function Editor({
     async (sceneId: string) => {
       const { data } = await supabase
         .from('shots')
-        .select('id, position, description, source, stock_query, resource_id')
+        .select('id, position, description, source, stock_query, resource_id, visual_brief')
         .eq('scene_id', sceneId)
         .order('position');
       if (!data) return;
+      const shots: Shot[] = data.map((row) => ({
+        id: row.id as string,
+        position: row.position as number,
+        description: row.description as string,
+        source: row.source as string,
+        stock_query: (row.stock_query as string | null) ?? null,
+        resource_id: (row.resource_id as string | null) ?? null,
+        visual_brief: parseVisualBrief(row.visual_brief),
+      }));
       setScenes((prev) =>
-        prev.map((s) => (s.id === sceneId ? { ...s, shots: data as Shot[] } : s)),
+        prev.map((s) => (s.id === sceneId ? { ...s, shots } : s)),
       );
     },
     [supabase],
@@ -141,12 +151,20 @@ export function Editor({
     if (ids.length) {
       const { data: shotRows } = await supabase
         .from('shots')
-        .select('id, scene_id, position, description, source, stock_query, resource_id')
+        .select('id, scene_id, position, description, source, stock_query, resource_id, visual_brief')
         .in('scene_id', ids)
         .order('position');
       for (const sh of shotRows ?? []) {
         const list = shotsByScene.get(sh.scene_id as string) ?? [];
-        list.push(sh as unknown as Shot);
+        list.push({
+          id: sh.id as string,
+          position: sh.position as number,
+          description: sh.description as string,
+          source: sh.source as string,
+          stock_query: (sh.stock_query as string | null) ?? null,
+          resource_id: (sh.resource_id as string | null) ?? null,
+          visual_brief: parseVisualBrief(sh.visual_brief),
+        });
         shotsByScene.set(sh.scene_id as string, list);
       }
     }
