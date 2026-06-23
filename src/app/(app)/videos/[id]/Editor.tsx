@@ -15,6 +15,7 @@ import { VideoSettingsPanel } from './VideoSettingsPanel';
 import { parseRenderError, type ParsedRenderError } from '@/lib/errors/render-error';
 import { RenderErrorCard } from '@/components/RenderErrorCard';
 import { parseVisualBrief, type VisualBrief } from '@/lib/videos/visual-brief';
+import { shotReadiness } from '@/lib/videos/shot-readiness';
 
 export type SceneWithShots = {
   id: string;
@@ -79,6 +80,9 @@ export function Editor({
   // Live copy of the channel's resources so an in-editor upload appears in every
   // shot picker immediately (the prop is the load-time snapshot).
   const [liveResources, setLiveResources] = useState<ResourceOption[]>(resources);
+
+  // Shots the operator chose to render anyway despite the readiness gate.
+  const [acceptedShots, setAcceptedShots] = useState<Set<string>>(new Set());
 
   const onRetry = useCallback(async () => {
     setRecoveryBusy(true);
@@ -426,7 +430,15 @@ export function Editor({
   const unsynthesized = scenes.filter((s) => s.audio_status === 'not_synthesized').length;
   const renderActive =
     renderStatus != null && renderStatus !== 'complete' && renderStatus !== 'failed';
-  const canRender = scenes.length > 0 && unsynthesized === 0 && !renderActive;
+
+  // Shots that depict a specific entity with no attached asset (and not overridden).
+  const unresolvedShots = scenes
+    .flatMap((s) => s.shots)
+    .map((sh) => ({ shot: sh, readiness: shotReadiness({ brief: sh.visual_brief, source: sh.source, resourceId: sh.resource_id }) }))
+    .filter((x) => !x.readiness.resolved && !acceptedShots.has(x.shot.id));
+
+  const canRender =
+    scenes.length > 0 && unsynthesized === 0 && !renderActive && unresolvedShots.length === 0;
 
   // Tick the elapsed-seconds counter once a second while a render is active.
   useEffect(() => {
@@ -492,6 +504,36 @@ export function Editor({
 
       {ordered.length > 0 && (
         <VideoSettingsPanel videoId={videoId} initialSettings={initialSettings} initialPrompt={initialPrompt} />
+      )}
+
+      {ordered.length > 0 && unresolvedShots.length > 0 && (
+        <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+          <p className="font-medium">
+            {unresolvedShots.length} shot{unresolvedShots.length === 1 ? '' : 's'} need an attached
+            asset before rendering.
+          </p>
+          <ul className="space-y-1 text-xs">
+            {unresolvedShots.map(({ shot, readiness }) => (
+              <li key={shot.id} className="flex items-center justify-between gap-2">
+                <span className="min-w-0 flex-1 truncate">
+                  {shot.visual_brief?.entity_name || shot.description || 'Shot'} —{' '}
+                  {readiness.resolved ? '' : readiness.reason}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAcceptedShots((p) => new Set(p).add(shot.id))}
+                  className="shrink-0 rounded-md border border-black/15 px-2 py-0.5 font-medium enabled:hover:bg-black/[0.04] dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+                  title="Render anyway with stock/fallback for this shot"
+                >
+                  Accept anyway
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs opacity-70">
+            Upload footage on the shot to resolve it, or accept to render with a fallback.
+          </p>
+        </div>
       )}
 
       {ordered.length > 0 && (
