@@ -173,6 +173,27 @@ authoritative and the `docs/` copy remains the design record.
       build(17/17) green. **No schema change, no new server action** (reuses
       `channel_resources` + `shots.resource_id`). The resolver-*preference* for attached
       assets + the readiness gate that *enforce* this are Slice C.
+    - **Slice C1 — visual briefs + editor + readiness gate (2026-06-22):** every shot now
+      carries a structured, AI-authored, **operator-editable** `VisualBrief` (subject /
+      action / setting / framing / mood / `specificity` (`generic|entity|abstract|
+      spokesperson`) / `entity_name` / `recommended_source`), authored at **script time**.
+      Migration `20260622120000_shot_visual_brief.sql` adds `shots.visual_brief jsonb` + a
+      `generated` `shot_source` value (unused until Slice D) + rewrites
+      `upsert_scene_with_shots` to persist the brief. Pure `parseVisualBrief`
+      (`src/lib/videos/visual-brief.ts`) + `shotReadiness` (`src/lib/videos/shot-readiness.ts`).
+      Script-gen emits the brief (camelCase AI output → snake_case stored shape converted in
+      the single `sceneToRpcArgs` site). A collapsible **`ShotBriefEditor`** per shot
+      (saved via `setShotVisualBrief`). The **readiness gate** blocks **Generate Video** when
+      any shot is `specificity==='entity'` with no attached asset (fail-forward), with a
+      per-shot "Accept anyway" override; Slice B's upload clears it, and Gate-2 vision QA
+      stays the backstop. **The resolver/compose/render path is UNCHANGED** — the brief is
+      additive; legacy shots (no brief) are never gated and render as before. 7 tasks
+      subagent-driven, final Opus review READY TO MERGE; 354 tests + tsc + lint + build(17/17)
+      green. The resolver *routing* on the brief (provider registry + fallback ladder) is
+      **Slice C2** (next). **Operator nit:** a stray `version='verify'` row landed in
+      `supabase_migrations.schema_migrations` during migration verification — harmless;
+      `delete from supabase_migrations.schema_migrations where version='verify'` if any
+      Supabase tooling complains.
   - **Caption emphasis revision (2026-06-16):** **kinetic text is now folded into the
     caption track — there is no longer a separate kinetic track.** The caption track
     builds word-by-word (DOAC-style) off the same `scenes.word_alignments` timing, and
