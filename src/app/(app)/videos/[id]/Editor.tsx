@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { SceneCard, type Shot, type ResourceOption } from './SceneCard';
-import { setShotResource } from './shot-actions';
+import { setShotResource, setShotVisualBrief } from './shot-actions';
 import { estimateSynthesisCost } from '@/lib/voice/estimate';
 import { synthesizeScenes, getSceneAudioUrl } from './voice-actions';
 import { startVideoRender, getRenderState } from './render-actions';
@@ -14,7 +14,7 @@ import { MusicPanel } from './MusicPanel';
 import { VideoSettingsPanel } from './VideoSettingsPanel';
 import { parseRenderError, type ParsedRenderError } from '@/lib/errors/render-error';
 import { RenderErrorCard } from '@/components/RenderErrorCard';
-import { parseVisualBrief } from '@/lib/videos/visual-brief';
+import { parseVisualBrief, type VisualBrief } from '@/lib/videos/visual-brief';
 
 export type SceneWithShots = {
   id: string;
@@ -347,6 +347,17 @@ export function Editor({
     [],
   );
 
+  const onSetShotBrief = useCallback(async (shotId: string, brief: VisualBrief) => {
+    const res = await setShotVisualBrief(shotId, brief);
+    if (!res.ok) return;
+    setScenes((prev) =>
+      prev.map((s) => ({
+        ...s,
+        shots: s.shots.map((sh) => (sh.id === shotId ? { ...sh, visual_brief: brief } : sh)),
+      })),
+    );
+  }, []);
+
   // Upload-and-attach: add the freshly-uploaded resource to the live list (so every
   // picker sees it) and pin it to the shot via the existing setShotResource path.
   const onUploadAndAttach = useCallback(
@@ -544,6 +555,7 @@ export function Editor({
               channelId={channelId}
               onSetShotResource={onSetShotResource}
               onUploadAndAttach={onUploadAndAttach}
+              onSetShotBrief={onSetShotBrief}
             />
           ))}
         </div>

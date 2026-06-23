@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { SceneAssetUploader } from './SceneAssetUploader';
+import { ShotBriefEditor } from './ShotBriefEditor';
 import { sceneAttachedResources } from '@/lib/resources/scene-tray';
 import type { VisualBrief } from '@/lib/videos/visual-brief';
 
@@ -38,6 +39,7 @@ export function SceneCard({
   channelId,
   onSetShotResource,
   onUploadAndAttach,
+  onSetShotBrief,
 }: {
   position: number;
   narration: string;
@@ -53,6 +55,7 @@ export function SceneCard({
   channelId: string;
   onSetShotResource: (shotId: string, resourceId: string | null) => void;
   onUploadAndAttach: (shotId: string, resource: ResourceOption) => void;
+  onSetShotBrief: (shotId: string, brief: VisualBrief) => void;
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [loadingAudio, setLoadingAudio] = useState(false);
@@ -120,27 +123,33 @@ export function SceneCard({
             .slice()
             .sort((a, b) => a.position - b.position)
             .map((shot) => (
-              <li key={shot.id} className="flex items-start gap-2 text-xs opacity-60">
-                <span className="opacity-70">▸</span>
-                <span className="flex-1">{shot.description}</span>
-                {resources.length > 0 && (
-                  <select
-                    value={shot.resource_id ?? ''}
-                    onChange={(e) => onSetShotResource(shot.id, e.target.value || null)}
-                    className="max-w-[10rem] truncate rounded border border-black/10 bg-transparent px-1 py-px text-[10px] dark:border-white/10"
-                    title="Pin a channel resource (or use stock)"
-                  >
-                    <option value="">Use stock</option>
-                    {resources.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {(r.description || '(untitled)').slice(0, 40)} ({r.kind})
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <SceneAssetUploader
-                  channelId={channelId}
-                  onUploaded={(resource) => onUploadAndAttach(shot.id, resource)}
+              <li key={shot.id} className="flex flex-col gap-1 text-xs opacity-60">
+                <div className="flex items-start gap-2">
+                  <span className="opacity-70">▸</span>
+                  <span className="flex-1">{shot.description}</span>
+                  {resources.length > 0 && (
+                    <select
+                      value={shot.resource_id ?? ''}
+                      onChange={(e) => onSetShotResource(shot.id, e.target.value || null)}
+                      className="max-w-[10rem] truncate rounded border border-black/10 bg-transparent px-1 py-px text-[10px] dark:border-white/10"
+                      title="Pin a channel resource (or use stock)"
+                    >
+                      <option value="">Use stock</option>
+                      {resources.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {(r.description || '(untitled)').slice(0, 40)} ({r.kind})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <SceneAssetUploader
+                    channelId={channelId}
+                    onUploaded={(resource) => onUploadAndAttach(shot.id, resource)}
+                  />
+                </div>
+                <ShotBriefEditor
+                  brief={shot.visual_brief}
+                  onSave={(brief) => onSetShotBrief(shot.id, brief)}
                 />
               </li>
             ))}
