@@ -158,6 +158,21 @@ authoritative and the `docs/` copy remains the design record.
       change. (Follow-up: a *cancelled* render in the editor shows the generic fallback —
       cancel writes `{cancelled:true}` with no `message`; nicer "Cancelled" copy is a future
       nicety, not a regression.)
+    - **Slice B — scene asset tray + operator upload (2026-06-22):** the operator can now
+      upload an image/video **straight from any shot in the editor** and it pins to that
+      shot — so a shot stock can't satisfy (the Rivian R2 case) is fixed by attaching
+      footage. New `SceneAssetUploader` (`videos/[id]/`) reuses the existing channel-resource
+      flow verbatim (`createResource` → signed PUT → `confirmResource`) and binds via the
+      existing `setShotResource`; the editor holds a **live resource list** so an upload
+      appears in every shot's picker immediately (`onUploadAndAttach` = dedup-add then
+      `onSetShotResource`). The uploader renders on **every** shot row regardless of how many
+      resources exist (solves the no-resources→no-picker chicken-and-egg; the old read-only
+      `{shot.source}` badge was replaced by it). A per-scene **"Attached:" tray** (pure
+      `sceneAttachedResources` in `src/lib/resources/scene-tray.ts`) shows what's pinned. 4
+      tasks subagent-driven, final Opus review READY TO MERGE; 340 tests + tsc + lint +
+      build(17/17) green. **No schema change, no new server action** (reuses
+      `channel_resources` + `shots.resource_id`). The resolver-*preference* for attached
+      assets + the readiness gate that *enforce* this are Slice C.
   - **Caption emphasis revision (2026-06-16):** **kinetic text is now folded into the
     caption track — there is no longer a separate kinetic track.** The caption track
     builds word-by-word (DOAC-style) off the same `scenes.word_alignments` timing, and
