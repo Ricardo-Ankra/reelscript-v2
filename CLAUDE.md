@@ -115,6 +115,29 @@ authoritative and the `docs/` copy remains the design record.
       `source='generated'` (source↔kind coherence). 4 tasks subagent-driven, final Opus
       review READY TO MERGE; **374 tests + tsc + lint + build(17/17) green.** Plan:
       `docs/superpowers/plans/2026-06-24-v2-slice0-shot-model-contract.md`.
+    - **Slice 1 — Higgsfield generation spine. Sub-decomposed 1a→1b; built behind a
+      provider seam + fake** (no live external creds needed — real Higgsfield/image-model
+      adapters drop in behind the seam when creds exist).
+      - **Slice 1a — generation cores & provider seam (2026-06-24):** additive, behind-a-seam,
+        **nothing wired into the pipeline yet** (1b does that). `src/lib/generation/provider.ts`
+        — the seam (`ImageProvider.generateStill` fast/await; `VideoProvider.submitClip`+`checkClip`
+        async submit/poll; `ClipStatus`=`pending|completed{mediaUrl}|failed{error}`; results are
+        fetchable URLs that expire ~1h → stream to R2 now). `fake-provider.ts` — `createFakeProvider`
+        (stateful in-memory double: per-requestId poll counts, pending×N→completed, `failNext()`) so
+        1b proves the durable poll headlessly. Pure cores: `motion-presets.ts` (`MOTION_ID` —
+        PLACEHOLDER `placeholder-<move>` ids, replace w/ live Higgsfield UUIDs before go-live;
+        `resolveMotion`), `prompt.ts` (`buildClipPrompt` v3 §6), `router.ts` (`route(shot)→Engine`
+        `'remotion'|'ingest'|`higgsfield.${string}``; hero-move→dop-preview, else
+        needs_speech→veo-3.1>broadcast_4k→kling-3.0>hero→seedance-2.0>dop-preview). `r2.ts`
+        +`streamUrlToR2`. Migration `20260624130000_v2_generation_contract.sql`:
+        `shots.{keyframe_first_key,keyframe_last_key,clip_key,routed_model}` + `entities` table
+        (account/video FK cascade, `unique(video_id,name)`, `seed`, RLS `acct_isolation`) — the
+        locked-seed-per-entity continuity store (1a defines, 1b populates). Seam coherence verified
+        end-to-end for 1b. 3 tasks subagent-driven, final Opus READY TO MERGE; **384 tests + tsc +
+        lint + build green.** Deferred to 1b: keyframeGenerator/higgsfieldShot Inngest fns + durable
+        poll, seed-assignment + reference-image carry, the drive script; real adapters land when
+        creds exist; first/last-frame chaining defers past Slice 2 (needs ffmpeg). Spec/plan:
+        `docs/superpowers/{specs,plans}/2026-06-24-v2-slice1a-generation-cores*`.
   - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
     the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
     redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel
