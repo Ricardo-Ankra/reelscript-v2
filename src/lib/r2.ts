@@ -72,3 +72,17 @@ export async function signedGetUrl(
     { expiresIn: expiresInSeconds },
   );
 }
+
+/** Fetch a remote URL and store its bytes in R2 under `key`. Used to persist
+ *  generation/ingest results whose source URLs expire (e.g. Higgsfield ~1h).
+ *  Returns the key. */
+export async function streamUrlToR2(
+  url: string,
+  key: string,
+  contentType?: string,
+): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`streamUrlToR2 fetch ${res.status} for ${key}`);
+  const bytes = Buffer.from(await res.arrayBuffer());
+  return putObject(key, bytes, contentType ?? res.headers.get('content-type') ?? 'application/octet-stream');
+}
