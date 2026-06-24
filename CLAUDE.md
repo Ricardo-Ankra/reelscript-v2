@@ -73,6 +73,48 @@ authoritative and the `docs/` copy remains the design record.
   lifecycle + evolution guard, archive/restore/delete with usage gating. Backend proven
   end-to-end headlessly (`npm run drive:primitive`); the three-pane studio UI ships.
   Design docs under `docs/superpowers/specs/2026-06-0*`.)
+  - **Reelscript V2 program — Higgsfield generative-video pipeline (started 2026-06-24):**
+    a major overhaul driven by the operator's "Reelscript Higgsfield Build Spec v3.0",
+    mapping the spec's principles onto the **existing TS stack** (NOT the spec's literal
+    Python/agent-skills or Neon/Drizzle). **Locked program decisions:** runtime = existing
+    Next.js + Supabase + **RLS** + Inngest + Remotion Lambda + R2 (refactor in place, don't
+    replace); data = **keep Supabase+RLS**, map v3's "job"→existing account/channel-scoped
+    **`video`**, keep the **`scenes`** table as the narrative grouping (= v3 `sceneId`),
+    extend `shots` in place; shot model = **extend additively** (the existing readiness gate
+    already encodes v3's authenticity test: `specificity==='entity'` must be a real asset).
+    **Decomposed into sequential slices** (each its own spec→plan→build): **Slice 0**
+    shot-model contract (done, below) → **1** Higgsfield generation spine (riskiest;
+    keyframe-gen + native client + router + motion presets + durable Inngest poll +
+    seed/continuity — this is the long-deferred asset-overhaul Slice D) → **2** live-action
+    ingest (extend the existing ffmpeg/remux Lambda — a generic argv executor — with
+    probe/conform/trim/reframe/keyframe+styleRef) → **3** assembly spine (`FinalTimeline`
+    Remotion comp sequencing clips/footage/gfx + master LUT + match-grade + overlays +
+    captions; VO-first audio — the deepest render-spine change, **needs a spike**) → **4**
+    gates G1 (storyboard) + G2 (preview) in-app via Inngest `waitForEvent` → **5** provenance
+    ledger + disclosure (`Disclosure` overlay + platform flag) → **6** master
+    `reelscript.pipeline` orchestration. v3 source spec retained by the operator; design
+    `docs/superpowers/specs/2026-06-24-v2-slice0-shot-model-contract-design.md`.
+    - **Slice 0 — shot-model contract & beat classification (2026-06-24):** additive,
+      **no rendering/resolution/readiness behavior change** — lays the contract later slices
+      consume. New enum `shot_kind` (`generative|motion_graphic|live_action`) + columns
+      `shots.{kind,camera_spec,lighting_spec,provenance,hero,needs_speech,broadcast_4k}`
+      (migration `20260624120000_v2_shot_kind.sql`, backfills `kind` from `source`:
+      procedural→motion_graphic, generated→generative, else live_action; `upsert_scene_with_shots`
+      rewritten to persist them — a faithful superset, `visual_brief` byte-unchanged). Pure
+      `src/lib/videos/cinematography.ts` (`CameraSpec`/`LightingSpec`/`Provenance` types +
+      never-throw parsers, mirrors `visual-brief.ts`) + `classify-beat.ts` (`classifyBeat(
+      specificity, recommendedSource)`: `entity`→`live_action` overrides all, else
+      `primitive`→motion_graphic / `generate`→generative / `stock`|`upload`→live_action — an
+      **auditable pure function of the brief, not an LLM choice**). Script-gen
+      (`script-generation.ts`) now authors camelCase `camera`/`lighting` for generative-bound
+      shots + `sceneToRpcArgs` derives `kind` + converts cinematography snake_case + attaches
+      a provenance stub (`synthetic = kind==='generative'`). **`shot_kind` is distinct from
+      `shot_source`** (kind = producing subsystem; source = acquisition path within a kind).
+      Deferred to Slice 1 (intentional): `seed`/`entities`/continuity, generation-output
+      columns (keyframe/styleRef/render keys, routed_model), and the AI emitting
+      `source='generated'` (source↔kind coherence). 4 tasks subagent-driven, final Opus
+      review READY TO MERGE; **374 tests + tsc + lint + build(17/17) green.** Plan:
+      `docs/superpowers/plans/2026-06-24-v2-slice0-shot-model-contract.md`.
   - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
     the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
     redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel
