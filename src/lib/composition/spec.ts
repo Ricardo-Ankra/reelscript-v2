@@ -34,6 +34,23 @@ export interface AssetManifestEntry {
   attribution?: string; // stock licensing credit (spec 8.6), for the overlay
 }
 
+/**
+ * One clip/footage shot placed on the timeline (Slice 3a). The shot's allotted span
+ * (`from`/`durationInFrames`) tiles its scene; `assetId` points at a kind:'video' manifest
+ * entry (the resolved clip_key/footage_key). `fit` is precomputed in loadBrief so the
+ * renderer stays declarative: 'trim' = clip ≥ allotted (trimAfter to fit); 'freeze' = clip
+ * < allotted (play fully, then hold the last source frame). `sourceDurationInFrames` is the
+ * clip's native length, used to split the freeze.
+ */
+export interface ShotSegment {
+  shotId: string;
+  from: number; // start frame within the scene (0 = scene start)
+  durationInFrames: number; // allotted span
+  assetId: string; // a kind:'video' manifest entry
+  fit: 'trim' | 'freeze';
+  sourceDurationInFrames: number;
+}
+
 export interface CompositionScene {
   id: string;
   durationInFrames: number;
@@ -43,6 +60,9 @@ export interface CompositionScene {
    *  scene's captions. Omitted ⇒ 'balanced'. */
   captionFocus?: CaptionFocus;
   instances: PrimitiveInstance[];
+  /** Clip/footage shot segments tiling this scene (Slice 3a). Absent/empty ⇒ legacy
+   *  primitive-only render. Rendered full-frame above primitives. */
+  segments?: ShotSegment[];
 }
 
 export interface CompositionSpec {
