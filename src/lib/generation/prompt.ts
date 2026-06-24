@@ -18,3 +18,19 @@ export function buildClipPrompt(
     `Negative: ${NEGATIVE}.`,
   ].join(' ');
 }
+
+// Build the Higgsfield text→still keyframe prompt: the same framing / subject / lighting
+// as the clip prompt but WITHOUT a camera move (a still has no motion). Ends with the
+// same explicit negative. Pure, total.
+export function buildStillPrompt(
+  brief: VisualBrief,
+  camera: CameraSpec,
+  lighting: LightingSpec,
+): string {
+  return [
+    `${camera.shot_size} ${camera.angle} angle, ${camera.lens_mm}mm lens, ${camera.dof} depth of field.`,
+    `${brief.subject}. ${brief.action}. ${brief.setting}.`,
+    `${lighting.key}, ${lighting.ratio} key-to-fill, ${lighting.time_of_day}, ${lighting.palette}, ${lighting.texture}.`,
+    `Negative: ${NEGATIVE}.`,
+  ].join(' ');
+}
