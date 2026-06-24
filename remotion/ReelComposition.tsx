@@ -97,7 +97,7 @@ export const ReelComposition: FC<ReelProps> = ({ spec }) => {
                             <OffthreadVideo src={url} muted />
                           </Sequence>
                           <Sequence from={seg.sourceDurationInFrames} layout="none">
-                            <Freeze frame={seg.sourceDurationInFrames - 1}>
+                            <Freeze frame={Math.max(0, seg.sourceDurationInFrames - 1)}>
                               <OffthreadVideo src={url} muted />
                             </Freeze>
                           </Sequence>
