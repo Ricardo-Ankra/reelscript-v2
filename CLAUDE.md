@@ -167,6 +167,34 @@ authoritative and the `docs/` copy remains the design record.
         (first/last chaining past Slice 2). Deferred: real Higgsfield/image adapters (behind the
         factory when creds exist), generation cost metering, assembly consumption of the clip (Slice 3).
         Spec/plan: `docs/superpowers/{specs,plans}/2026-06-24-v2-slice1b-generation-pipeline*`.
+    - **Slice 2 — live-action ingest. Sub-decomposed 2a→2b** (the deployed-Lambda change is
+      the de-riskable foundation). Conforms uploaded/resource live-action footage (probe →
+      conform/trim/reframe → keyframe) so the assembly spine (Slice 3) sequences consistent
+      clips. **Locked:** probe IS included (most future-proof — real source facts: duration,
+      dims, rotation, audio); styleRef = extract+store only (defer wiring, no generative↔live
+      link yet); uploaded/resource footage only (stock search/agentic loop untouched).
+      - **Slice 2a — ingest foundation (2026-06-24). SHIPPED, merged to main, 403 tests +
+        build(17/17) green, final Opus READY TO MERGE.** Additive; **nothing wired into the
+        pipeline yet** (2b does that). The `lambda/music-remux` ffmpeg executor gains a
+        `mode:'probe'` branch (downloads one input, runs `ffprobe -v error -print_format json
+        -show_streams -show_format`, returns `{ok,probe}`) + `ffprobe` in the Dockerfile —
+        **the default ffmpeg re-mux path is byte-unchanged** (probe returns before the `args`
+        guard; `runCapture` captures stdout vs `run`'s inherit). `invokeProbe(inputUrl)` in
+        `src/lib/music/remux-invoke.ts` (same Lambda, same secret/client — **one Lambda, two
+        modes**). Pure cores: `src/lib/ingest/probe.ts` `parseProbe` (never-throws ffprobe-JSON
+        → `ProbeResult{width,height,durationSec,fps,hasAudio,rotation}`, `Array.isArray`-guarded;
+        defines `RawProbe`/`ProbeResult` so the server client imports `RawProbe` as a **type** —
+        pure←server dep direction) + `src/lib/ingest/ffmpeg.ts` `buildConformArgs` (cover
+        `scale=…:force_original_aspect_ratio=increase,crop=W:H,fps`, **target-dims-only — no
+        source-dim arithmetic**, **no `-noautorotate`** (rotation = ffmpeg default autorotate;
+        `probe.rotation` is metadata, NOT re-applied → no double-rotate), h264/yuv420p + aac|`-an`,
+        `-t` only when `durationSec>0`, `+faststart`) + `buildKeyframeArgs` (`-ss` before `-i`,
+        `-frames:v 1` PNG). `scripts/smoke-probe.ts` (+ `npm run smoke:probe -- <r2-key>`) —
+        **operator** verification. **Operator gate before 2b:** redeploy the Lambda
+        (`node scripts/deploy-music-lambda.mjs`, needs Docker+AWS CLI) then `npm run smoke:probe`.
+        Deferred to 2b: `ingestShots` Inngest fn, `shots.footage_key` migration, styleRef-frame
+        storage, drive script. Spec/plan:
+        `docs/superpowers/{specs,plans}/2026-06-24-v2-slice2a-ingest-foundation*`.
   - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
     the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
     redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel
