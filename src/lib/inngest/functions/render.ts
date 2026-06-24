@@ -27,7 +27,8 @@ import {
 } from '@/lib/composition/compose';
 import { parseVisualBrief } from '@/lib/videos/visual-brief';
 import { validateSpec, formatGate1Feedback, type Gate1Error } from '@/lib/composition/gate1';
-import type { CompositionSpec, AssetManifestEntry } from '@/lib/composition/spec';
+import type { CompositionSpec, AssetManifestEntry, ShotSegment } from '@/lib/composition/spec';
+import { partitionSceneFrames, fitForSegment, segmentAssetId, buildSegmentAssets } from '@/lib/composition/assembly';
 import { searchStock, resolveStockKeys } from '@/lib/assets/search';
 import type { StockCandidate } from '@/lib/assets/candidate';
 import { resolveStockAssets, resolveResourceAssets, resourceAssetId } from '@/lib/assets/resolve';
@@ -485,21 +486,43 @@ async function loadBrief(
   let needsStock = false;
   const resourceIdSet = new Set<string>();
   const pinnedByScene = new Map<string, string[]>();
+  // Per-scene ordered shots (for the proportional partition) + the assembly-backed ones.
+  const sceneShots = new Map<string, { shotId: string; durationSeconds: number }[]>();
+  const sceneSegShots = new Map<string, { shotId: string; key: string; durationSeconds: number }[]>();
   if (ids.length) {
     const { data: shotRows } = await admin
       .from('shots')
-      .select('scene_id, description, position, source, resource_id, visual_brief')
+      .select('id, scene_id, description, position, source, resource_id, visual_brief, kind, clip_key, footage_key, duration_seconds')
       .in('scene_id', ids)
       .order('position');
     for (const sh of shotRows ?? []) {
-      const list = shotsByScene.get(sh.scene_id as string) ?? [];
+      const sceneId = sh.scene_id as string;
+      const shotId = sh.id as string;
+      const durationSeconds = Number(sh.duration_seconds) || 0;
+      const key = (sh.clip_key as string | null) ?? (sh.footage_key as string | null);
+
+      // Every shot participates in the scene's proportional partition.
+      const all = sceneShots.get(sceneId) ?? [];
+      all.push({ shotId, durationSeconds });
+      sceneShots.set(sceneId, all);
+
+      if (key) {
+        // Assembly-backed: becomes a full-frame segment; never a hint, never stock.
+        const segs = sceneSegShots.get(sceneId) ?? [];
+        segs.push({ shotId, key, durationSeconds });
+        sceneSegShots.set(sceneId, segs);
+        continue;
+      }
+
+      // Non-assembly shots flow into the compose hints / pins / needsStock exactly as before.
+      const list = shotsByScene.get(sceneId) ?? [];
       list.push(formatShotHint(parseVisualBrief(sh.visual_brief), sh.description as string));
-      shotsByScene.set(sh.scene_id as string, list);
+      shotsByScene.set(sceneId, list);
       if (sh.source === 'resource' && sh.resource_id) {
         resourceIdSet.add(sh.resource_id as string);
-        const pins = pinnedByScene.get(sh.scene_id as string) ?? [];
+        const pins = pinnedByScene.get(sceneId) ?? [];
         pins.push(sh.resource_id as string);
-        pinnedByScene.set(sh.scene_id as string, pins);
+        pinnedByScene.set(sceneId, pins);
       } else {
         needsStock = true; // 'stock' (the default) — this shot wants real footage
       }
@@ -545,6 +568,30 @@ async function loadBrief(
         return meta ? { assetId: resourceAssetId(rid), kind: meta.kind, description: meta.description } : null;
       })
       .filter((p): p is { assetId: string; kind: 'image' | 'video'; description: string } => p !== null);
+    // Slice 3a: place this scene's clip/footage shots as segments tiling the scene frames.
+    let segments: ShotSegment[] | undefined;
+    const segShots = sceneSegShots.get(s.id as string) ?? [];
+    if (segShots.length) {
+      const timings = partitionSceneFrames(durationInFrames, sceneShots.get(s.id as string) ?? []);
+      const byShot = new Map(timings.map((t) => [t.shotId, t]));
+      assets.push(...buildSegmentAssets(segShots.map((x) => ({ shotId: x.shotId, key: x.key }))));
+      segments = segShots
+        .map((x) => {
+          const t = byShot.get(x.shotId);
+          if (!t) return null;
+          const sourceDurationInFrames = Math.max(Math.round(x.durationSeconds * fps), 1);
+          return {
+            shotId: x.shotId,
+            from: t.from,
+            durationInFrames: t.durationInFrames,
+            assetId: segmentAssetId(x.shotId),
+            fit: fitForSegment(sourceDurationInFrames, t.durationInFrames),
+            sourceDurationInFrames,
+          } satisfies ShotSegment;
+        })
+        .filter((x): x is ShotSegment => x !== null);
+      if (segments.length === 0) segments = undefined;
+    }
     return {
       id: s.id as string,
       position,
@@ -553,6 +600,7 @@ async function loadBrief(
       durationInFrames,
       voiceoverAssetId,
       pinnedResources: pinnedResources.length ? pinnedResources : undefined,
+      segments,
     };
   });
 
