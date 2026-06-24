@@ -2,6 +2,7 @@
 // unit-tested directly. The Inngest worker composes these with the Anthropic
 // client and the Supabase admin client.
 import { z } from 'zod';
+import { classifyBeat } from '../videos/classify-beat';
 
 // --- The shape the model must emit, one scene per NDJSON line ----------------
 
@@ -19,6 +20,30 @@ export const generatedVisualBriefSchema = z.object({
   recommendedSource: z.enum(['stock', 'upload', 'generate', 'primitive']).default('stock'),
 });
 
+// Cinematography the model authors for generative-bound shots (camelCase in AI
+// output; stored snake_case via sceneToRpcArgs). Optional everywhere.
+export const generatedCameraSchema = z.object({
+  shotSize: z.enum(['ECU', 'CU', 'MS', 'WS', 'EWS', 'two_shot', 'OTS', 'POV']).default('MS'),
+  angle: z.enum(['eye_level', 'low', 'high', 'dutch', 'aerial', 'overhead']).default('eye_level'),
+  move: z.enum([
+    'static', 'dolly_in', 'dolly_out', 'arc_left', 'arc_right', 'orbit_360',
+    'crane_up', 'crane_down', 'tracking', 'pan_left', 'pan_right', 'tilt_up',
+    'tilt_down', 'whip_pan', 'push_in', 'pull_back', 'handheld', 'bullet_time',
+    'boom', 'snorricam', 'fpv_drone',
+  ]).default('static'),
+  lensMm: z.number().int().default(35),
+  dof: z.enum(['shallow', 'deep', 'rack_focus']).default('shallow'),
+  motionStrength: z.number().min(0).max(1).default(0.7),
+});
+
+export const generatedLightingSchema = z.object({
+  key: z.string().default('soft key from frame left'),
+  ratio: z.string().default('3:1'),
+  timeOfDay: z.string().default('golden hour'),
+  palette: z.string().default('teal shadows, warm highlights'),
+  texture: z.string().default('subtle film grain'),
+});
+
 export const generatedShotSchema = z.object({
   position: z.number().int().positive(),
   description: z.string().default(''),
@@ -26,6 +51,8 @@ export const generatedShotSchema = z.object({
   stockQuery: z.string().optional(),
   durationSeconds: z.number().positive().optional(),
   visualBrief: generatedVisualBriefSchema.optional(),
+  camera: generatedCameraSchema.optional(),
+  lighting: generatedLightingSchema.optional(),
 });
 
 export const generatedSceneSchema = z.object({
@@ -107,26 +134,63 @@ export function sceneToRpcArgs(scene: GeneratedScene, accountId: string, videoId
     p_position: scene.position,
     p_narration: scene.narration,
     p_duration_seconds: scene.durationSeconds ?? null,
-    p_shots: scene.shots.map((s) => ({
-      position: s.position,
-      description: s.description,
-      source: s.source,
-      stock_query: s.stockQuery ?? null,
-      duration_seconds: s.durationSeconds ?? null,
-      visual_brief: s.visualBrief
-        ? {
-            subject: s.visualBrief.subject,
-            action: s.visualBrief.action,
-            setting: s.visualBrief.setting,
-            framing: s.visualBrief.framing,
-            mood: s.visualBrief.mood,
-            specificity: s.visualBrief.specificity,
-            entity_name:
-              s.visualBrief.specificity === 'entity' ? (s.visualBrief.entityName ?? null) : null,
-            recommended_source: s.visualBrief.recommendedSource,
-          }
-        : null,
-    })),
+    p_shots: scene.shots.map((s) => {
+      const specificity = s.visualBrief?.specificity ?? 'generic';
+      const recommendedSource = s.visualBrief?.recommendedSource ?? 'stock';
+      const kind = classifyBeat(specificity, recommendedSource);
+      return {
+        position: s.position,
+        description: s.description,
+        source: s.source,
+        stock_query: s.stockQuery ?? null,
+        duration_seconds: s.durationSeconds ?? null,
+        visual_brief: s.visualBrief
+          ? {
+              subject: s.visualBrief.subject,
+              action: s.visualBrief.action,
+              setting: s.visualBrief.setting,
+              framing: s.visualBrief.framing,
+              mood: s.visualBrief.mood,
+              specificity: s.visualBrief.specificity,
+              entity_name:
+                s.visualBrief.specificity === 'entity' ? (s.visualBrief.entityName ?? null) : null,
+              recommended_source: s.visualBrief.recommendedSource,
+            }
+          : null,
+        kind,
+        camera_spec: s.camera
+          ? {
+              shot_size: s.camera.shotSize,
+              angle: s.camera.angle,
+              move: s.camera.move,
+              lens_mm: s.camera.lensMm,
+              dof: s.camera.dof,
+              motion_strength: s.camera.motionStrength,
+            }
+          : null,
+        lighting_spec: s.lighting
+          ? {
+              key: s.lighting.key,
+              ratio: s.lighting.ratio,
+              time_of_day: s.lighting.timeOfDay,
+              palette: s.lighting.palette,
+              texture: s.lighting.texture,
+            }
+          : null,
+        provenance: {
+          synthetic: kind === 'generative',
+          source: null,
+          model: null,
+          seed: null,
+          source_uri: null,
+          created_at: null,
+          operator: null,
+        },
+        hero: false,
+        needs_speech: false,
+        broadcast_4k: false,
+      };
+    }),
   };
 }
 
@@ -160,6 +224,15 @@ export function buildSystemPrompt(): string {
     '        "entityName": the exact name (REQUIRED when specificity is "entity"),',
     '        "recommendedSource": one of "stock", "upload", "generate", "primitive"',
     '          (use "upload" when specificity is "entity" — only operator footage is reliable).',
+    '     "camera" and "lighting" (author ONLY when recommendedSource is "generate"; omit otherwise):',
+    '        "camera": { "shotSize": one of ECU/CU/MS/WS/EWS/two_shot/OTS/POV,',
+    '          "angle": eye_level/low/high/dutch/aerial/overhead,',
+    '          "move": EXACTLY ONE of static/dolly_in/dolly_out/arc_left/arc_right/orbit_360/',
+    '            crane_up/crane_down/tracking/pan_left/pan_right/tilt_up/tilt_down/whip_pan/',
+    '            push_in/pull_back/handheld/bullet_time/boom/snorricam/fpv_drone (never stack moves),',
+    '          "lensMm": 24 wide / 35 standard / 85 portrait, "dof": shallow/deep/rack_focus,',
+    '          "motionStrength": a number 0..1 }',
+    '        "lighting": { "key", "ratio" (e.g. "3:1"), "timeOfDay", "palette", "texture" }',
     '',
     'Guidance: prefer "stock" for real footage (always give a stockQuery), and',
     '"procedural" for text/animation/diagrams. Keep 1-3 shots per scene. Be honest in',

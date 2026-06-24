@@ -61,7 +61,21 @@ test('sceneToRpcArgs: maps to snake_case with nulls for missing fields', () => {
     p_narration: 'Two',
     p_duration_seconds: null,
     p_shots: [
-      { position: 1, description: 'd', source: 'procedural', stock_query: null, duration_seconds: null, visual_brief: null },
+      {
+        position: 1,
+        description: 'd',
+        source: 'procedural',
+        stock_query: null,
+        duration_seconds: null,
+        visual_brief: null,
+        kind: 'live_action',
+        camera_spec: null,
+        lighting_spec: null,
+        provenance: { synthetic: false, source: null, model: null, seed: null, source_uri: null, created_at: null, operator: null },
+        hero: false,
+        needs_speech: false,
+        broadcast_4k: false,
+      },
     ],
   });
 });
@@ -176,4 +190,79 @@ test('sceneToRpcArgs: entity_name dropped when specificity is not entity', () =>
   };
   const args = sceneToRpcArgs(scene, 'acc', 'vid');
   assert.equal(args.p_shots[0].visual_brief?.entity_name, null);
+});
+
+test('sceneToRpcArgs derives kind from the brief', () => {
+  const scene = parseSceneLine(JSON.stringify({
+    position: 1, narration: 'hi',
+    shots: [
+      { position: 1, source: 'procedural', visualBrief: { specificity: 'abstract', recommendedSource: 'primitive' } },
+      { position: 2, source: 'stock', visualBrief: { specificity: 'generic', recommendedSource: 'generate' } },
+      { position: 3, source: 'resource', visualBrief: { specificity: 'entity', entityName: 'Rivian R2', recommendedSource: 'generate' } },
+      { position: 4, source: 'stock', visualBrief: { specificity: 'generic', recommendedSource: 'stock' } },
+    ],
+  }));
+  assert.ok(scene);
+  const args = sceneToRpcArgs(scene!, 'acct', 'vid');
+  assert.deepEqual(args.p_shots.map((s) => s.kind), ['motion_graphic', 'generative', 'live_action', 'live_action']);
+});
+
+test('sceneToRpcArgs: kind defaults to live_action when no brief', () => {
+  const scene = parseSceneLine(JSON.stringify({ position: 1, narration: 'x', shots: [{ position: 1, source: 'stock' }] }));
+  const args = sceneToRpcArgs(scene!, 'a', 'v');
+  assert.equal(args.p_shots[0].kind, 'live_action');
+});
+
+test('sceneToRpcArgs: provenance stub synthetic matches generative kind', () => {
+  const scene = parseSceneLine(JSON.stringify({
+    position: 1, narration: 'x',
+    shots: [
+      { position: 1, source: 'stock', visualBrief: { specificity: 'generic', recommendedSource: 'generate' }, camera: { move: 'orbit_360' }, lighting: { palette: 'cool blue' } },
+      { position: 2, source: 'procedural', visualBrief: { specificity: 'abstract', recommendedSource: 'primitive' } },
+    ],
+  }));
+  const args = sceneToRpcArgs(scene!, 'a', 'v');
+  assert.equal(args.p_shots[0].provenance.synthetic, true);
+  assert.equal(args.p_shots[1].provenance.synthetic, false);
+  assert.equal(args.p_shots[0].provenance.source, null);
+});
+
+test('sceneToRpcArgs: camera/lighting camelCase→snake_case; omitted → null; flags default false', () => {
+  const scene = parseSceneLine(JSON.stringify({
+    position: 1, narration: 'x',
+    shots: [
+      { position: 1, source: 'stock', visualBrief: { specificity: 'generic', recommendedSource: 'generate' },
+        camera: { shotSize: 'WS', move: 'orbit_360', lensMm: 24, motionStrength: 0.5 },
+        lighting: { timeOfDay: 'night', palette: 'neon' } },
+      { position: 2, source: 'stock' },
+    ],
+  }));
+  const args = sceneToRpcArgs(scene!, 'a', 'v');
+  assert.deepEqual(args.p_shots[0].camera_spec, {
+    shot_size: 'WS', angle: 'eye_level', move: 'orbit_360', lens_mm: 24, dof: 'shallow', motion_strength: 0.5,
+  });
+  assert.equal(args.p_shots[0].lighting_spec.time_of_day, 'night');
+  assert.equal(args.p_shots[0].lighting_spec.palette, 'neon');
+  assert.equal(args.p_shots[1].camera_spec, null);
+  assert.equal(args.p_shots[1].lighting_spec, null);
+  assert.equal(args.p_shots[0].hero, false);
+  assert.equal(args.p_shots[0].needs_speech, false);
+  assert.equal(args.p_shots[0].broadcast_4k, false);
+});
+
+test('sceneToRpcArgs: existing visual_brief conversion unchanged (regression)', () => {
+  const scene = parseSceneLine(JSON.stringify({
+    position: 1, narration: 'x',
+    shots: [{ position: 1, source: 'resource', visualBrief: { subject: 'a', action: 'b', setting: 'c', framing: 'd', mood: 'e', specificity: 'entity', entityName: 'ACME', recommendedSource: 'upload' } }],
+  }));
+  const args = sceneToRpcArgs(scene!, 'a', 'v');
+  assert.deepEqual(args.p_shots[0].visual_brief, {
+    subject: 'a', action: 'b', setting: 'c', framing: 'd', mood: 'e',
+    specificity: 'entity', entity_name: 'ACME', recommended_source: 'upload',
+  });
+});
+
+test('parseSceneLine tolerates camera/lighting and their absence', () => {
+  assert.ok(parseSceneLine(JSON.stringify({ position: 1, narration: 'x', shots: [{ position: 1, source: 'stock', camera: { move: 'tracking' }, lighting: { key: 'rim' } }] })));
+  assert.ok(parseSceneLine(JSON.stringify({ position: 1, narration: 'x', shots: [{ position: 1, source: 'stock' }] })));
 });
