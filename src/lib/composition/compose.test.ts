@@ -438,3 +438,25 @@ test('formatShotHint: brief with all-empty descriptive fields falls back to the 
   );
   assert.equal(hint, 'fallback desc');
 });
+
+// --- Slice 3a: segments carry --------------------------------------------------
+
+test('assembleSpec carries segments onto the scene and omits them when absent', () => {
+  const seg = {
+    shotId: 'shot-1',
+    from: 0,
+    durationInFrames: 60,
+    assetId: 'seg-shot-1',
+    fit: 'trim' as const,
+    sourceDurationInFrames: 60,
+  };
+  const briefWithSeg: CompositionBrief = {
+    ...brief,
+    scenes: [{ ...brief.scenes[0], segments: [seg] }, brief.scenes[1]],
+  };
+  const withSeg = assembleSpec({ scenes: [{ sceneId: brief.scenes[0].id, instances: [] }] }, briefWithSeg);
+  assert.deepEqual(withSeg.scenes[0].segments, [seg]);
+
+  const withoutSeg = assembleSpec({ scenes: [{ sceneId: brief.scenes[0].id, instances: [] }] }, brief);
+  assert.equal(withoutSeg.scenes[0].segments, undefined);
+});

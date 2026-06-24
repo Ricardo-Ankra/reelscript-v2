@@ -14,6 +14,7 @@ import type {
   CompositionSpec,
   CompositionMetadata,
   AssetManifestEntry,
+  ShotSegment,
 } from './spec';
 import type { StockCandidate, StockSearchParams } from '../assets/candidate';
 import type { CaptionFocus } from '../captions/types';
@@ -31,6 +32,9 @@ export interface SceneBrief {
   // Channel resources pinned to this scene's shots (source='resource'). The AI MUST
   // place these as the scene's primary visual (see buildCompositionUserPrompt).
   pinnedResources?: { assetId: string; kind: 'image' | 'video'; description: string }[];
+  // Clip/footage shot segments (Slice 3a), precomputed in loadBrief. Carried straight onto
+  // the output scene by assembleSpec — the AI never sees or composes these shots.
+  segments?: ShotSegment[];
 }
 
 export interface CompositionBrief {
@@ -463,6 +467,7 @@ export function assembleSpec(ai: AiComposition, brief: CompositionBrief): Compos
         durationInFrames: s.durationInFrames,
         ...(s.voiceoverAssetId ? { voiceover: { assetId: s.voiceoverAssetId } } : {}),
         ...(ai?.captionFocus ? { captionFocus: ai.captionFocus } : {}),
+        ...(s.segments && s.segments.length ? { segments: s.segments } : {}),
         instances: ai?.instances ?? [],
       };
     }),
