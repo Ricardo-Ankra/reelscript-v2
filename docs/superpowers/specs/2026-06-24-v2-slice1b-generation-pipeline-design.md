@@ -180,8 +180,8 @@ durable `step.run`:
    const, e.g. 150 — same as render.)
 4. **`finalize-${shot.id}`** — `const clipKey = \`generation/${shot.id}/clip.mp4\`;`
    `await streamUrlToR2(mediaUrl, clipKey, 'video/mp4');`
-   `const provenance: Provenance = { synthetic: true, source: \`higgsfield:${model}\`, model, seed, source_uri: null };`
-   (the full `Provenance` shape from `cinematography.ts` — `synthetic`/`source`/`model`/`seed`/`source_uri`)
+   `const provenance: Provenance = { synthetic: true, source: \`higgsfield:${model}\`, model, seed, source_uri: null, created_at: null, operator: null };`
+   (the full `Provenance` shape from `cinematography.ts` — `synthetic`/`source`/`model`/`seed`/`source_uri`/`created_at`/`operator`)
    `await admin.from('shots').update({ clip_key: clipKey, routed_model: model, provenance }).eq('id', shot.id);`
 
 > **`shots.keyframe_first_key` vs `entities.keyframe_key`:** the shot column is the
@@ -206,22 +206,25 @@ Mirrors `drive-render.ts`. Proves keyframe→clip→R2 **fully offline**:
 2. **Ensure a generative shot exists.** If the video has no `kind='generative'` shot,
    the script logs and exits with guidance (1b does not author shots — script-gen does;
    the drive script operates on an existing video). It does **not** fabricate scenes.
-3. Configure the fake with `data:`-URL fixtures so `streamUrlToR2`'s `fetch` resolves
-   with **zero external HTTP** (Node's undici `fetch` supports `data:` URLs). Because the
-   Inngest function builds its own provider via `getGenerationProvider()`, the fixtures
-   are supplied through env the factory reads when present:
-   `GEN_FAKE_STILL_URL` / `GEN_FAKE_CLIP_URL` (the factory passes them into
-   `createFakeProvider({ stillUrl, clipUrl })` when set). The drive script sets these to
-   tiny `data:image/png;base64,…` / `data:video/mp4;base64,…` fixtures (trivial bytes —
-   R2 `putObject` does not validate content; we only prove the round-trip + key write).
+3. **`data:`-URL fixtures make `streamUrlToR2` round-trip with zero external HTTP**
+   (Node 20+ `fetch`/undici supports `data:` URLs). The fixtures are supplied through env
+   the factory reads when `GENERATION_PROVIDER` is `fake`: `GEN_FAKE_STILL_URL` /
+   `GEN_FAKE_CLIP_URL` (passed into `createFakeProvider({ stillUrl, clipUrl })`).
+   **Cross-process note:** the Inngest function runs in the **dev-server** process
+   (`next dev` + the Inngest dev server), not the drive-script process, so these two vars
+   must live in **`.env.local`** (loaded by the dev server) — a drive script setting
+   `process.env` locally would not reach the function. The drive script therefore
+   documents the exact `data:` values to add to `.env.local` and preflight-prints a
+   reminder; it does not rely on setting them itself. Trivial bytes suffice — R2
+   `putObject` does not validate content; we only prove the round-trip + key write.
 4. `await inngest.send({ name: 'generation/run', data: { videoId, accountId } })`.
 5. Poll the shots' `clip_key`/`keyframe_first_key` until populated (or timeout), then
    `signedGetUrl` each and report. Confirms the keys exist in R2.
 
 > The factory gains two optional env reads (`GEN_FAKE_STILL_URL`/`GEN_FAKE_CLIP_URL`)
-> used only when `GENERATION_PROVIDER` is `fake` (the default) — so the drive script
-> needs no separate code path into the function. In normal runs they are unset and the
-> fake's built-in defaults apply.
+> used only when `GENERATION_PROVIDER` is `fake` (the default). In normal runs they are
+> unset and the fake's built-in defaults apply (`https://fake.local/…`, which
+> `streamUrlToR2` cannot fetch — hence the fixtures are required for the offline proof).
 
 ## 8. Testing
 
