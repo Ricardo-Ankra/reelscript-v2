@@ -31,6 +31,7 @@ test('partitionSceneFrames falls back to an equal split when all weights are 0',
     { shotId: 'c', durationSeconds: 0 },
   ]);
   assert.deepEqual(t.map((x) => x.durationInFrames), [3, 3, 3]);
+  assert.deepEqual(t.map((x) => x.from), [0, 3, 6]);
 });
 
 test('partitionSceneFrames handles a single shot and uneven weights', () => {
@@ -43,6 +44,8 @@ test('partitionSceneFrames handles a single shot and uneven weights', () => {
   ]);
   assert.equal(t.reduce((s, x) => s + x.durationInFrames, 0), 10);
   assert.equal(t[0].durationInFrames, 7); // floor(10*3/4)=7
+  assert.equal(t[1].durationInFrames, 3);
+  assert.deepEqual(t.map((x) => x.from), [0, 7]);
 });
 
 test('partitionSceneFrames returns [] for no shots', () => {
