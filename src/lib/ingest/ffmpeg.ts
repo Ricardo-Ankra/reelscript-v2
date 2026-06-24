@@ -45,3 +45,29 @@ export function buildKeyframeArgs(input: KeyframeInput): string[] {
   // -ss before -i = fast input seek; one frame out to a PNG still.
   return ['-y', '-ss', f(input.atSec), '-i', input.inPath, '-frames:v', '1', input.outPath];
 }
+
+export interface ImageConformInput {
+  inPath: string;
+  outPath: string;
+  target: { width: number; height: number };
+}
+
+// Reframe a still image to cover the target frame (scale-to-fill + crop). No fps/audio/
+// trim/movflags — those are video concerns. One image out. Same target-driven geometry
+// invariant as buildConformArgs (never source-dim arithmetic).
+export function buildImageConformArgs(input: ImageConformInput): string[] {
+  const { inPath, outPath, target } = input;
+  const vf = [
+    `scale=${target.width}:${target.height}:force_original_aspect_ratio=increase`,
+    `crop=${target.width}:${target.height}`,
+  ].join(',');
+  return ['-y', '-i', inPath, '-vf', vf, '-frames:v', '1', outPath];
+}
+
+// Deterministic, representative styleRef timestamp: a touch past frame 0 (avoids a black
+// fade-in) but never beyond the clip midpoint. Needs no probe round-trip.
+export function styleRefAt(durationSec: number | null | undefined): number {
+  const d = typeof durationSec === 'number' && Number.isFinite(durationSec) ? durationSec : 0;
+  if (d <= 0) return 0;
+  return Math.min(0.5, d / 2);
+}
