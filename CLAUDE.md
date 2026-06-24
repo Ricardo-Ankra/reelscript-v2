@@ -138,6 +138,35 @@ authoritative and the `docs/` copy remains the design record.
         poll, seed-assignment + reference-image carry, the drive script; real adapters land when
         creds exist; first/last-frame chaining defers past Slice 2 (needs ffmpeg). Spec/plan:
         `docs/superpowers/{specs,plans}/2026-06-24-v2-slice1a-generation-cores*`.
+      - **Slice 1b — generation pipeline (2026-06-24). SHIPPED, merged to main, 391 tests +
+        build(17/17) green, final Opus READY TO MERGE.** Wires 1a's seam into Inngest;
+        **additive, fires only on an explicit `generation/run` event nothing sends yet**
+        (Slice 6 wires it into the master pipeline). `src/lib/inngest/functions/generate-shots.ts`
+        — `generateShots` (event `generation/run` `{videoId,accountId,jobId?}`, 2-arg `triggers:[…]`
+        + `cancelOn` by jobId like the other job fns): loads the video's `kind='generative'` shots
+        (via scene ids — shots have no `video_id`) **with `.is('clip_key',null)` so re-runs are
+        idempotent**, then per shot runs `runGenerationSpine` **mirroring `render.ts`'s
+        `runLambdaSpine`**: durable steps `keyframe-`/`submit-`/`poll-…-${attempt}`/`wait-…`/
+        `finalize-${shot.id}` (all **namespaced by shot UUID** → no Inngest checkpoint collision).
+        Flow: `buildStillPrompt`→`provider.generateStill`→`streamUrlToR2`→`shots.keyframe_first_key`;
+        then `signedGetUrl(keyframe)`+`resolveMotion`+`buildClipPrompt`+`route`→`submitClip`→durable
+        poll `checkClip` (failed→throw / completed→break / sleep 3s, MAX_POLLS 150, then timeout)→
+        `streamUrlToR2`→`shots.clip_key`+`routed_model`+ the full **7-field `Provenance`**
+        (`synthetic:true, source:`higgsfield:${model}`, model, seed, source_uri/created_at/operator:null`).
+        Pure cores (Tasks 1–2): `generation/seed.ts` `videoSeed(videoId)` (FNV-1a **per-video** seed,
+        all generative shots share it), `prompt.ts` += `buildStillPrompt` (= `buildClipPrompt` minus
+        the camera-move clause — a still has no motion), `provider-factory.ts` `getGenerationProvider()`
+        (**the sole provider source**, env-gated `GENERATION_PROVIDER` default `fake`; `higgsfield`/unknown
+        throw; threads `GEN_FAKE_STILL_URL`/`GEN_FAKE_CLIP_URL` into the fake). 1a minor folded:
+        `HERO_MOVES`→`readonly CameraMove[]`. `scripts/drive-generation.ts` (+ `npm run drive:generation
+        -- <videoId>`) — **operator** headless proof against the fake with **`data:`-URL fixtures in
+        `.env.local`** (the fn runs in the dev-server process, not the script's → fixtures must live in
+        the dev-server env; documented in-file); never fabricates shots. **Continuity = per-video seed
+        ONLY** — the `entities` table stays **unused** in 1b; per-entity seed-locking + reference-image
+        carry + recurring-entity extraction defer to a later slice. `keyframe_last_key` never written
+        (first/last chaining past Slice 2). Deferred: real Higgsfield/image adapters (behind the
+        factory when creds exist), generation cost metering, assembly consumption of the clip (Slice 3).
+        Spec/plan: `docs/superpowers/{specs,plans}/2026-06-24-v2-slice1b-generation-pipeline*`.
   - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
     the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
     redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel
