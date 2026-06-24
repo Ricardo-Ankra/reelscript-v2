@@ -67,7 +67,10 @@ export const ingestShots = inngest.createFunction(
 );
 
 // One resource shot: resolve → (video: probe → conform → keyframe) | (image: reframe).
-// Per-step DB writes so a mid-shot failure resumes without re-conforming.
+// Per-step DB writes so a mid-shot failure resumes without re-conforming. Output R2 keys
+// are deterministic (ingest/<shotId>/…), so an Inngest step retry (e.g. the DB update
+// fails after invokeRemux succeeded) re-PUTs the same bytes to the same key — idempotent
+// overwrite, no orphaned objects (mirrors 1b's fixed-key streamUrlToR2).
 async function runIngestSpine(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   step: any,

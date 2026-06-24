@@ -55,7 +55,10 @@ async function main(): Promise<void> {
       .from('shots')
       .select('id, footage_key, style_ref_key')
       .in('id', shotIds);
-    const done = (rows ?? []).filter((r) => r.footage_key);
+    // Both keys: footage_key + style_ref_key are written per shot (image branch sets both
+    // at once; video branch sets style_ref_key in a later step), so gate on both to avoid
+    // printing "complete" before the keyframe step lands.
+    const done = (rows ?? []).filter((r) => r.footage_key && r.style_ref_key);
     console.log(`  [${i}] ${done.length}/${shotIds.length} conformed`);
     if (done.length === shotIds.length) {
       for (const r of rows ?? []) {
