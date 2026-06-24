@@ -98,7 +98,7 @@ The thin slice that proves the product is: **a channel exists → a prompt becom
 
 **Goal:** videos look produced.
 
-**Build:** captions (burnt-in + sidecars); kinetic text frame-aligned to voice timings; opt-in background music with the seeded library and the ffmpeg-Lambda re-mux path; aspect-ratio / FPS / target-length controls; thumbnail generation. Expand the starter primitive set as gaps appear.
+**Build:** captions (burnt-in + sidecars); kinetic text frame-aligned to voice timings; opt-in background music with the seeded library and the ffmpeg-Lambda re-mux path; aspect-ratio / FPS / target-length controls. Expand the starter primitive set as gaps appear. (Thumbnail generation was originally listed here; it was built then scrapped 2026-06-24 — cancelled, not part of the project.)
 
 **Milestone:** a video ships with captions, kinetic emphasis, and a music bed, and music changes re-mux in seconds without re-rendering.
 
@@ -120,7 +120,7 @@ The thin slice that proves the product is: **a channel exists → a prompt becom
 
 **Goal:** the app is self-serve; no seeding or hardcoding remains.
 
-**Build:** the complete channel settings (visual identity, brand voice, resources, show structures, thumbnail templates); account settings (credentials, model routing, the voice-profiles UI with live ElevenLabs model fetch, primitive library management); projects organization; versioning and history UI; the cost ledger surfaced as per-render and per-video lifetime totals.
+**Build:** the complete channel settings (visual identity, brand voice, resources, show structures); account settings (credentials, model routing, the voice-profiles UI with live ElevenLabs model fetch, primitive library management); projects organization; versioning and history UI; the cost ledger surfaced as per-render and per-video lifetime totals. (Thumbnail templates were originally scoped here; the thumbnail feature was scrapped 2026-06-24.)
 
 **Milestone:** a video can be created and shipped end-to-end through the UI alone, against a channel and account the user configured themselves.
 

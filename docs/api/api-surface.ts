@@ -33,7 +33,7 @@ type ISO = string; // ISO-8601 timestamp
 //
 //   Read / list / create / update / soft-delete:
 //     channels, projects, videos, scenes, shots, channel_resources (metadata),
-//     music_tracks (metadata), show_structures, thumbnail_templates,
+//     music_tracks (metadata), show_structures,
 //     voice_profiles (rows; the model *list* is Tier 2), model_routing,
 //     account cost-alert settings.
 //   Read-only from the client (written only by Tier 2/3 server code):
@@ -143,9 +143,6 @@ export interface RenderApi {
     music: { trackId?: Id; volume?: number; duck?: number; loop?: boolean; cropMs?: [number, number]; fade?: [number, number] };
   }): Promise<{ jobId: Id }>;
 
-  /** Generate a thumbnail from a template (spec 4.5). */
-  generateThumbnail(input: { videoId: Id; templateId: Id; keyframeMs?: number }): Promise<{ r2Key: R2Key }>;
-
   /** Push a render to a connected platform as a draft (never auto-publish,
    *  spec 6.6 / out-of-scope). Uses the stored OAuth token. */
   pushToSocial(input: { renderId: Id; platform: string }): Promise<{ externalDraftId: string }>;
@@ -207,7 +204,7 @@ export type RenderPipelineStep =
   | 'gate2' //          smoke frame on Lambda + vision check (spec 11.2)
   | 'render' //         invoke Remotion Lambda; step.waitForEvent('render/lambda-complete')
   | 'remux' //          ffmpeg Lambda, only if music is on
-  | 'finalize'; //      update Render row, post-render hooks (thumbnail keyframe, social drafts)
+  | 'finalize'; //      update Render row, post-render hooks (social drafts)
 
 // =============================================================================
 // WEBHOOKS (external -> Vercel route handler -> Inngest event)

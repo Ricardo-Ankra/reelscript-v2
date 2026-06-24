@@ -239,7 +239,8 @@ authoritative and the `docs/` copy remains the design record.
     controls~~ **shipped** — per-video on `VideoSettingsPanel`, and channel-level
     defaults (`channels.defaults` aspect/fps/target_length, inherited by new videos
     at creation) via the Phase-8 video-defaults slice (2026-06-18). **Thumbnail
-    generation** is still Phase 8. Music selection is a **deterministic mood-match in code** (not an AI
+    generation was built then scrapped (2026-06-24) — cancelled, not planned; the
+    operator designs thumbnails externally.** Music selection is a **deterministic mood-match in code** (not an AI
     choice), and the **Music panel** now exposes all six mix params (volume, ducking
     depth, loop, in/out crop, fade) — **full panel shipped 2026-06-21**; Save
     dual-writes `renders.music_params` (immediate remux) + `videos.settings.music_params`
@@ -303,8 +304,8 @@ authoritative and the `docs/` copy remains the design record.
     an account-level `/costs` rollup (pure `src/lib/costs/aggregate.ts` over RLS-scoped
     reads; the security-definer `video_costs`/`render_costs` views are bypassed). Figures
     are labeled **"Estimated"** — the **cost accounting itself is still Sonnet-pinned**
-    (a non-Sonnet `video_composition` route bills at Sonnet rates) and a few ops
-    (thumbnails) aren't metered yet; correcting the accounting is a separate item. The **render idempotency
+    (a non-Sonnet `video_composition` route bills at Sonnet rates); correcting the
+    accounting is a separate item. The **render idempotency
     key is `hash(script_revision_id)`** (composition is non-deterministic), reused
     only for in-flight renders. The composition spec exists as a **durable
     key-based record** + an **ephemeral signed render-time copy** (sign at
