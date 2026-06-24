@@ -1,9 +1,9 @@
-import type { CameraSpec, ShotKind } from '../videos/cinematography';
+import type { CameraMove, CameraSpec, ShotKind } from '../videos/cinematography';
 
 export type Engine = 'remotion' | 'ingest' | `higgsfield.${string}`;
 
 // Moves where the camera motion IS the hero → Higgsfield's first-party dop model.
-const HERO_MOVES = ['orbit_360', 'bullet_time', 'arc_left', 'arc_right', 'snorricam', 'whip_pan', 'fpv_drone'];
+const HERO_MOVES: readonly CameraMove[] = ['orbit_360', 'bullet_time', 'arc_left', 'arc_right', 'snorricam', 'whip_pan', 'fpv_drone'];
 
 export interface RoutableShot {
   kind: ShotKind;
