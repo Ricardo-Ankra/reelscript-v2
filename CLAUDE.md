@@ -227,6 +227,38 @@ authoritative and the `docs/` copy remains the design record.
         ARE tested). Deferred: styleRef→generation wiring, stock-sourced conform, assembly consumption
         (Slice 3). 5 tasks subagent-driven. Spec/plan:
         `docs/superpowers/{specs,plans}/2026-06-24-v2-slice2b-ingest-pipeline*`.
+    - **Slice 3 — assembly spine (`FinalTimeline`). Spiked + sub-decomposed 3a→3b.**
+      A spike confirmed the two pillars: **(1) assembly** — Remotion `<OffthreadVideo src
+      trimBefore trimAfter playbackRate/>` in `<Sequence>` sequences/trims **external MP4s**
+      frame-accurately (4.0.472), Lambda-rendered, coexisting with the primitive/scene model;
+      **(2) color** — Remotion's bundled ffmpeg is minimal (no lavfi), so master-LUT/match-grade
+      run as an **ffmpeg post-pass on the dedicated Lambda** (johnvansickle static — `lut3d`/`eq`/
+      `colorbalance`), reusing Slice 2's executor + the music-re-mux post-pass pattern. So 3 =
+      **3a assembly skeleton** (sequence clips/footage as segments) → **3b color** (LUT + match-grade
+      post-pass). Overlays/captions ride composition-wide unchanged.
+      - **Slice 3a — assembly skeleton (2026-06-24). SHIPPED on branch, 417 tests + build(17/17)
+        green.** Additive; **consumes** the keys 1b/2b write — no migration, no AI for clip/footage
+        shots, legacy videos byte-identical. **Locked:** scene-driven (shots partition the scene's
+        VO frames proportionally to `duration_seconds`, tiling exactly); generative/live-action shots
+        **bypass compose** (placed deterministically); **VO-fit = trim-long / freeze-hold-short**;
+        **A-lite** mixed scenes (a `clip_key`/`footage_key` shot is dropped from compose hints +
+        `needsStock` and rendered full-frame over its sub-range, occluding primitives there).
+        `CompositionScene.segments?: ShotSegment[]` (`spec.ts`) = `{shotId,from,durationInFrames,
+        assetId,fit,sourceDurationInFrames}`. Pure `src/lib/composition/assembly.ts` (TDD):
+        `partitionSceneFrames` (floor-shares, remainder-to-last, equal-split on zero weights),
+        `fitForSegment` (native≥allotted→trim), `segmentAssetId`→`seg-<shotId>`, `buildSegmentAssets`
+        (keys→`kind:'video'` manifest entries). `assembleSpec` carries `segments` onto the scene
+        (conditional spread, legacy byte-identical — the single agentic+procedural assembly point).
+        `loadBrief` reads `kind/clip_key/footage_key/duration_seconds`, partitions ALL shots, emits
+        segments + assets, excludes assembly shots from hints/`needsStock` (`sourceDurationInFrames =
+        max(round(duration_seconds*fps),1)`). `ReelComposition` renders segments as full-frame muted
+        `OffthreadVideo` above primitives (`SEGMENT_LAYER=10000`; `fit:'trim'`→`trimAfter`,
+        `fit:'freeze'`→play then `<Freeze frame={max(0,sourceDur-1)}>`; null-url guard); captions/
+        attribution overlays untouched. **Deferred:** color/LUT/match-grade (3b), sub-range-confined
+        primitive composition (clips occlude), generative-clip duration probing (uses planned
+        `duration_seconds`), first/last-frame chaining. Verified by gates + the existing `drive:render`
+        operator path (Remotion render not unit-tested). 6 tasks subagent-driven. Spec/plan:
+        `docs/superpowers/{specs,plans}/2026-06-24-v2-slice3a-assembly-skeleton*`.
   - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
     the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
     redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel
