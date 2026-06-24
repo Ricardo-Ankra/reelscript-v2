@@ -1,10 +1,15 @@
 import type { FC } from 'react';
-import { AbsoluteFill, Audio, Sequence, type CalculateMetadataFunction } from 'remotion';
+import { AbsoluteFill, Audio, OffthreadVideo, Freeze, Sequence, type CalculateMetadataFunction } from 'remotion';
 import './brand-fonts'; // loads every brand-allowlisted font (spec 10.4); gates rendering internally
 import { ThemeContext, AssetContext, type ResolvedAsset } from '../src/lib/primitives/theme-context';
 import type { CompositionSpec } from '../src/lib/composition/spec';
 import { PRIMITIVES } from './primitives/registry';
 import { AnimatedCaptionTrack } from './AnimatedCaptionTrack';
+
+// Segments are full-frame and occlude primitives within their sub-range (Slice 3a A-lite).
+// Composition-level overlays (captions, attribution) render after the scenes, so they stay
+// on top regardless of this z-index.
+const SEGMENT_LAYER = 10000;
 
 export type ReelProps = {
   /** Signed R2 URL to the composition spec JSON (spec-by-pointer, spec 10.2). */
@@ -72,6 +77,36 @@ export const ReelComposition: FC<ReelProps> = ({ spec }) => {
             <Sequence key={scene.id} from={from} durationInFrames={scene.durationInFrames}>
               {/* Per-scene voiceover; plays from the scene's first frame (spec 8.3). */}
               {voiceUrl && <Audio src={voiceUrl} />}
+              {scene.segments?.map((seg) => {
+                const url = assetUrl(seg.assetId);
+                if (!url) return null; // durable (unsigned) spec ⇒ no playback, like voiceover
+                return (
+                  <Sequence
+                    key={seg.shotId}
+                    from={seg.from}
+                    durationInFrames={seg.durationInFrames}
+                    layout="none"
+                  >
+                    <div style={{ position: 'absolute', inset: 0, zIndex: SEGMENT_LAYER }}>
+                      {/* Muted: VO-first; the per-scene <Audio> owns sound. */}
+                      {seg.fit === 'trim' ? (
+                        <OffthreadVideo src={url} trimAfter={seg.durationInFrames} muted />
+                      ) : (
+                        <>
+                          <Sequence durationInFrames={seg.sourceDurationInFrames} layout="none">
+                            <OffthreadVideo src={url} muted />
+                          </Sequence>
+                          <Sequence from={seg.sourceDurationInFrames} layout="none">
+                            <Freeze frame={Math.max(0, seg.sourceDurationInFrames - 1)}>
+                              <OffthreadVideo src={url} muted />
+                            </Freeze>
+                          </Sequence>
+                        </>
+                      )}
+                    </div>
+                  </Sequence>
+                );
+              })}
               {scene.instances.map((inst, i) => {
                 const Comp = PRIMITIVES[inst.primitive];
                 if (!Comp) return null;
