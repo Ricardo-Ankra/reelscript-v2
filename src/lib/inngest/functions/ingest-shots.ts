@@ -42,7 +42,8 @@ export const ingestShots = inngest.createFunction(
     // Live-action, resource-pinned shots not yet conformed (idempotent on footage_key).
     // Shots have no video_id → resolve via scene ids.
     const shots = await step.run('load-shots', async () => {
-      const { data: scenes } = await admin.from('scenes').select('id').eq('video_id', videoId);
+      const { data: scenes, error: scenesError } = await admin.from('scenes').select('id').eq('video_id', videoId);
+      if (scenesError) throw new Error(`load scenes: ${scenesError.message}`);
       const sceneIds = (scenes ?? []).map((s) => s.id as string);
       if (sceneIds.length === 0) return [] as IngestShot[];
       const { data, error } = await admin
