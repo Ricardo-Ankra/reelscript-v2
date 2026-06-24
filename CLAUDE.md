@@ -195,6 +195,38 @@ authoritative and the `docs/` copy remains the design record.
         Deferred to 2b: `ingestShots` Inngest fn, `shots.footage_key` migration, styleRef-frame
         storage, drive script. Spec/plan:
         `docs/superpowers/{specs,plans}/2026-06-24-v2-slice2a-ingest-foundation*`.
+      - **Slice 2b — ingest pipeline (2026-06-24). SHIPPED on branch, 408 tests +
+        build(17/17) green.** Wires 2a's cores into Inngest; **additive, fires only on an
+        explicit `ingest/run` event nothing sends yet** (Slice 6 wires it). The **2a operator
+        gate is now DONE** — the probe Lambda was redeployed (build→ECR push→`deploy-music-lambda.mjs`)
+        and `smoke:probe` is green (a real render MP4 → `{1080×1920,5.08s,30fps,audio,rot0}`);
+        the redeploy needed temporary **AdministratorAccess on `remotion-user`** (the only AWS
+        profile = that least-priv render user; no permissions boundary) then detach. Migration
+        `20260624140000_v2_ingest_contract.sql` adds `shots.{footage_key,style_ref_key}` (nullable
+        text, pipeline outputs — no RPC change). `src/lib/inngest/functions/ingest-shots.ts` —
+        `ingestShots` **mirrors `generateShots`** (2-arg `createFunction` + `triggers:[{event:'ingest/run'}]`
+        + `cancelOn` by jobId, `retries:2`): loads `kind='live_action' AND source='resource' AND
+        resource_id NOT NULL AND footage_key IS NULL` shots **via scene ids** (shots have no
+        `video_id`; `.is('footage_key',null)` → **idempotent re-runs**), then per shot a durable
+        spine **namespaced by shot UUID**: `resolve-` (`channel_resources.{r2_key,kind}`,
+        account-scoped, throws on missing) → **video branch** `probe-` (signedGetUrl→`invokeProbe`→
+        `parseProbe`) → `conform-` (signed GET in + signed PUT out, `buildConformArgs(target,probe,
+        durationSec=shot.duration_seconds)`, `invokeRemux` → write `footage_key`) → `keyframe-`
+        (`buildKeyframeArgs` at `styleRefAt(duration)` on the conformed clip → write `style_ref_key`)
+        | **image branch** (operator chose "also reframe images") single `conform-image-`
+        (`buildImageConformArgs` reframe → write **both** `footage_key` + `style_ref_key` = the
+        conformed still IS its own styleRef). **Per-step DB writes** (not a final finalize) so a
+        mid-shot failure resumes without re-conforming. New pure cores (Task 2, TDD):
+        `buildImageConformArgs` (cover scale+crop, `-frames:v 1`, no video-only flags, target-dims-only)
+        + `styleRefAt(dur)=min(0.5,dur/2)` else 0 (representative frame, avoids fade-in, no probe).
+        Registered in `src/app/api/inngest/route.ts`. `scripts/drive-ingest.ts` (+ `npm run
+        drive:ingest -- <videoId>`) — **operator** proof against the REAL Lambda (no fake seam like
+        generation; needs a video with ≥1 resource-pinned live-action shot; never fabricates shots).
+        **styleRef = store only** (no generation wiring — mirrors 1b's unused-`entities` deferral).
+        `ingestShots` itself has NO unit test (like `generateShots` — gate+drive verified; pure cores
+        ARE tested). Deferred: styleRef→generation wiring, stock-sourced conform, assembly consumption
+        (Slice 3). 5 tasks subagent-driven. Spec/plan:
+        `docs/superpowers/{specs,plans}/2026-06-24-v2-slice2b-ingest-pipeline*`.
   - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
     the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
     redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildConformArgs, buildKeyframeArgs } from './ffmpeg.ts';
+import { buildConformArgs, buildKeyframeArgs, buildImageConformArgs, styleRefAt } from './ffmpeg.ts';
 import type { ProbeResult } from './probe.ts';
 
 const probe = (over: Partial<ProbeResult> = {}): ProbeResult => ({
@@ -49,4 +49,40 @@ test('buildKeyframeArgs grabs a single still at the timestamp', () => {
   assert.equal(a[a.indexOf('-ss') + 1], '1.25');
   assert.ok(a.includes('-frames:v') && a[a.indexOf('-frames:v') + 1] === '1');
   assert.equal(a[a.length - 1], '/tmp/k.png');
+});
+
+test('buildImageConformArgs reframes to target dims with a single frame out', () => {
+  const args = buildImageConformArgs({ inPath: '/tmp/in', outPath: '/tmp/out.png', target: { width: 1080, height: 1920 } });
+  const vf = args[args.indexOf('-vf') + 1];
+  assert.match(vf, /scale=1080:1920:force_original_aspect_ratio=increase/);
+  assert.match(vf, /crop=1080:1920/);
+  assert.ok(args.includes('-frames:v'));
+  assert.equal(args[args.indexOf('-frames:v') + 1], '1');
+  assert.equal(args[args.length - 1], '/tmp/out.png');
+});
+
+test('buildImageConformArgs emits no video-only flags', () => {
+  const args = buildImageConformArgs({ inPath: '/tmp/in', outPath: '/tmp/out.png', target: { width: 1080, height: 1080 } });
+  for (const flag of ['-c:a', '-an', '-r', '-t', '-movflags', 'fps=']) {
+    assert.ok(!args.join(' ').includes(flag), `should not contain ${flag}`);
+  }
+});
+
+test('buildImageConformArgs geometry is target-dims-only (no source arithmetic)', () => {
+  const args = buildImageConformArgs({ inPath: '/tmp/in', outPath: '/tmp/out.png', target: { width: 720, height: 1280 } });
+  const joined = args.join(' ');
+  assert.ok(joined.includes('720') && joined.includes('1280'));
+});
+
+test('styleRefAt is min(0.5, dur/2) for positive durations', () => {
+  assert.equal(styleRefAt(10), 0.5);
+  assert.equal(styleRefAt(0.6), 0.3);
+  assert.equal(styleRefAt(1), 0.5);
+});
+
+test('styleRefAt is 0 for zero/negative/absent durations', () => {
+  assert.equal(styleRefAt(0), 0);
+  assert.equal(styleRefAt(-5), 0);
+  assert.equal(styleRefAt(null), 0);
+  assert.equal(styleRefAt(undefined), 0);
 });
