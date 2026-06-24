@@ -1,6 +1,7 @@
 import 'server-only';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { serverEnv } from '../env.server';
+import type { RawProbe } from '../ingest/probe';
 
 // Invoke the dedicated ffmpeg re-mux Lambda (Phase 6, spec 10.1) via the Lambda SDK
 // (SigV4) — NOT a public Function URL. The Lambda is a DUMB executor: it downloads
@@ -59,4 +60,31 @@ export async function invokeRemux(payload: RemuxInvocation): Promise<RemuxResult
     throw new Error(`remux Lambda ${resp.statusCode}: ${result.error ?? 'unknown'}`);
   }
   return result;
+}
+
+// Invoke the same ffmpeg Lambda in PROBE mode (V2 Slice 2a): one input, no argv/outputs.
+// Returns the raw ffprobe JSON (parse with parseProbe). One Lambda, two modes.
+export async function invokeProbe(inputUrl: string): Promise<RawProbe> {
+  const event = {
+    headers: { 'x-remux-secret': serverEnv.remux.secret },
+    body: JSON.stringify({ mode: 'probe', inputs: { '/tmp/probe-input': inputUrl } }),
+    isBase64Encoded: false,
+  };
+  const out = await client().send(
+    new InvokeCommand({
+      FunctionName: serverEnv.remux.functionName,
+      Payload: Buffer.from(JSON.stringify(event)),
+    }),
+  );
+  if (out.FunctionError) {
+    const detail = out.Payload ? Buffer.from(out.Payload).toString().slice(0, 500) : out.FunctionError;
+    throw new Error(`probe Lambda crashed: ${detail}`);
+  }
+  if (!out.Payload) throw new Error('probe Lambda returned no payload');
+  const resp = JSON.parse(Buffer.from(out.Payload).toString()) as { statusCode: number; body: string };
+  const result = JSON.parse(resp.body) as { ok: boolean; probe?: RawProbe; error?: string };
+  if (resp.statusCode !== 200 || !result.ok || !result.probe) {
+    throw new Error(`probe Lambda ${resp.statusCode}: ${result.error ?? 'unknown'}`);
+  }
+  return result.probe;
 }

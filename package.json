@@ -27,7 +27,8 @@
     "inspect:video": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/inspect-video.ts",
     "smoke:primitive": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/primitive-bundle-smoke.ts",
     "drive:primitive": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/drive-primitive.ts",
-    "seed:effects": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/seed-effects.ts"
+    "seed:effects": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/seed-effects.ts",
+    "smoke:probe": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/smoke-probe.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",
