@@ -44,3 +44,9 @@ test('parseProbe fps 0/0 → 0', () => {
   const r = parseProbe({ streams: [{ codec_type: 'video', width: 1, height: 1, avg_frame_rate: '0/0' }] });
   assert.equal(r.fps, 0);
 });
+
+test('parseProbe never throws when streams is a non-array value', () => {
+  // @ts-expect-error — deliberately malformed shape
+  const r = parseProbe({ streams: {}, format: {} });
+  assert.deepEqual(r, { width: 0, height: 0, durationSec: 0, fps: 0, hasAudio: false, rotation: 0 });
+});

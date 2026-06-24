@@ -36,7 +36,8 @@ function normalizeRotation(deg: number): number {
 }
 
 function videoStream(raw: RawProbe): Record<string, unknown> | null {
-  return (raw.streams ?? []).find((x) => x && x.codec_type === 'video') ?? null;
+  const streams = Array.isArray(raw.streams) ? raw.streams : [];
+  return streams.find((x) => x && x.codec_type === 'video') ?? null;
 }
 
 function rotationOf(vs: Record<string, unknown> | null): number {
@@ -59,12 +60,13 @@ function rotationOf(vs: Record<string, unknown> | null): number {
 export function parseProbe(raw: RawProbe): ProbeResult {
   const vs = videoStream(raw);
   const fmtDur = raw.format ? num(raw.format.duration) : 0;
+  const streams = Array.isArray(raw.streams) ? raw.streams : [];
   return {
     width: vs ? num(vs.width) : 0,
     height: vs ? num(vs.height) : 0,
     durationSec: fmtDur > 0 ? fmtDur : vs ? num(vs.duration) : 0,
     fps: vs ? parseFps(vs.avg_frame_rate ?? vs.r_frame_rate) : 0,
-    hasAudio: (raw.streams ?? []).some((x) => x && x.codec_type === 'audio'),
+    hasAudio: streams.some((x) => x && x.codec_type === 'audio'),
     rotation: rotationOf(vs),
   };
 }
