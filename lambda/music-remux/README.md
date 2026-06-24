@@ -1,8 +1,9 @@
 # Music re-mux Lambda (Phase 6, spec 10.1)
 
-A dedicated ffmpeg Lambda that mixes the chosen music track onto the voiceover-only
-base MP4 — the audio-only re-mux that lets a music change re-run in **seconds without
-re-rendering**. It is a *dumb executor*: the Reelscript worker builds the ffmpeg argv
+A dedicated ffmpeg/ffprobe executor Lambda that mixes the chosen music track onto the
+voiceover-only base MP4 — the audio-only re-mux that lets a music change re-run in
+**seconds without re-rendering** — and (V2 Slice 2a) probes live-action footage via
+ffprobe. It is a *dumb executor*: the Reelscript worker builds the ffmpeg argv
 (the ducking filter graph, in `src/lib/music/ffmpeg.ts`, unit-tested) and invokes this
 Lambda with signed R2 in/out URLs; the Lambda downloads, runs ffmpeg, and PUTs the result.
 
@@ -26,6 +27,14 @@ Invoke `reelscript-music-remux` with an event whose `body` is JSON:
 
 and header `x-remux-secret: <REMUX_LAMBDA_SECRET>`. Returns `{ "ok": true, "durationMs": <n> }`
 on success (HTTP-style `statusCode` in the handler response), else `{ "ok": false, "error": … }`.
+
+### Probe mode (V2 Slice 2a)
+
+Invoke with `{ "mode": "probe", "inputs": { "/tmp/probe-input": "<signed GET url>" } }`
+(no `args`, no `outputs`). The Lambda downloads the input, runs
+`ffprobe -v error -print_format json -show_streams -show_format`, and returns
+`{ "ok": true, "probe": <ffprobe JSON> }`. The container now ships both `ffmpeg` and
+`ffprobe`; the default (argv) ffmpeg re-mux path is unchanged.
 
 ## Deploy (needs Docker + AWS CLI)
 

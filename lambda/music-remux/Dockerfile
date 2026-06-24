@@ -8,6 +8,7 @@ RUN dnf install -y tar xz && \
     curl -fsSL https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o /tmp/ffmpeg.tar.xz && \
     mkdir -p /tmp/ffmpeg && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg --strip-components=1 && \
     cp /tmp/ffmpeg/ffmpeg /usr/local/bin/ffmpeg && chmod +x /usr/local/bin/ffmpeg && \
+    cp /tmp/ffmpeg/ffprobe /usr/local/bin/ffprobe && chmod +x /usr/local/bin/ffprobe && \
     rm -rf /tmp/ffmpeg /tmp/ffmpeg.tar.xz && dnf clean all
 
 # The handler. No npm deps (global fetch + node built-ins only).
