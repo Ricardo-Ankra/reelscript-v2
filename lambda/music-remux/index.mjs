@@ -1,20 +1,23 @@
-// Dedicated ffmpeg re-mux Lambda (Phase 6, spec 10.1). A DUMB executor behind a
-// Function URL: the Reelscript worker POSTs the ffmpeg argv plus signed R2 in/out
-// URLs; this downloads the inputs, runs ffmpeg, and PUTs the outputs back. The argv
-// (the ducking filter graph) is built and unit-tested in the app
+// Dedicated ffmpeg/ffprobe executor Lambda (Phase 6, spec 10.1; extended V2 Slice 2a).
+// A DUMB executor behind a Function URL: the Reelscript worker POSTs the ffmpeg argv
+// plus signed R2 in/out URLs; this downloads the inputs, runs ffmpeg, and PUTs the
+// outputs back. The argv (the ducking filter graph) is built and unit-tested in the app
 // (src/lib/music/ffmpeg.ts) — this side never decides the mix, only runs it.
+// V2 Slice 2a adds a probe mode: POST { mode: 'probe', inputs: { <path>: <url> } } to
+// run ffprobe on a single input and return its JSON (for live-action footage probing).
 //
 // Auth: a shared secret header (x-remux-secret) checked against REMUX_LAMBDA_SECRET.
 // Enough for V1's single operator; IAM-signed invocation is a Phase-9 hardening.
 //
-// Runtime: a container image (see Dockerfile) that bundles a static ffmpeg at
-// /usr/local/bin/ffmpeg. Node 20 (global fetch). Writes only to /tmp (Lambda's
+// Runtime: a container image (see Dockerfile) that bundles static ffmpeg + ffprobe at
+// /usr/local/bin/. Node 20 (global fetch). Writes only to /tmp (Lambda's
 // writable scratch); size the function's ephemeral storage for your longest video.
 
 import { spawn } from 'node:child_process';
 import { writeFile, readFile, rm } from 'node:fs/promises';
 
 const FFMPEG = process.env.FFMPEG_PATH || '/usr/local/bin/ffmpeg';
+const FFPROBE = process.env.FFPROBE_PATH || '/usr/local/bin/ffprobe';
 
 function run(cmd, args) {
   return new Promise((resolve, reject) => {
@@ -26,6 +29,25 @@ function run(cmd, args) {
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) resolve();
+      else reject(new Error(`${cmd} exited ${code}: ${stderr.slice(-1500)}`));
+    });
+  });
+}
+
+function runCapture(cmd, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve(stdout);
       else reject(new Error(`${cmd} exited ${code}: ${stderr.slice(-1500)}`));
     });
   });
@@ -66,7 +88,27 @@ export const handler = async (event) => {
     return reply(400, { ok: false, error: 'invalid JSON body' });
   }
 
-  const { args, inputs = {}, outputs = {}, outputContentType = 'video/mp4' } = payload;
+  const { mode, args, inputs = {}, outputs = {}, outputContentType = 'video/mp4' } = payload;
+
+  // Probe mode: download the single input, run ffprobe, return its JSON. No argv, no
+  // outputs. (V2 Slice 2a — generalizes this executor to ffmpeg + ffprobe.)
+  if (mode === 'probe') {
+    const entries = Object.entries(inputs);
+    if (entries.length !== 1) return reply(400, { ok: false, error: 'probe needs exactly one input' });
+    const [path, url] = entries[0];
+    try {
+      await download(url, path);
+      const stdout = await runCapture(FFPROBE, [
+        '-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', path,
+      ]);
+      return reply(200, { ok: true, probe: JSON.parse(stdout) });
+    } catch (err) {
+      return reply(500, { ok: false, error: String(err?.message ?? err) });
+    } finally {
+      await rm(path, { force: true }).catch(() => {});
+    }
+  }
+
   if (!Array.isArray(args) || !args.length) return reply(400, { ok: false, error: 'missing ffmpeg args' });
 
   const touched = [...Object.keys(inputs), ...Object.keys(outputs)];
