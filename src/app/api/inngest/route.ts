@@ -5,6 +5,7 @@ import { generateScript } from '@/lib/inngest/functions/generate-script';
 import { synthesizeVoice } from '@/lib/inngest/functions/synthesize-voice';
 import { musicRemux } from '@/lib/inngest/functions/music-remux';
 import { deployPrimitive } from '@/lib/inngest/functions/deploy-primitive';
+import { generateShots } from '@/lib/inngest/functions/generate-shots';
 
 // Node runtime: the render function uses @remotion/lambda + the AWS SDK, the script
 // and composition steps use the Anthropic SDK, and voice synthesis writes audio
@@ -13,5 +14,5 @@ export const runtime = 'nodejs';
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [renderVideo, renderSample, generateScript, synthesizeVoice, musicRemux, deployPrimitive],
+  functions: [renderVideo, renderSample, generateScript, synthesizeVoice, musicRemux, deployPrimitive, generateShots],
 });
