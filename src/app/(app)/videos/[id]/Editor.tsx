@@ -7,8 +7,9 @@ import { SceneCard, type Shot, type ResourceOption } from './SceneCard';
 import { setShotResource, setShotVisualBrief } from './shot-actions';
 import { estimateSynthesisCost } from '@/lib/voice/estimate';
 import { synthesizeScenes, getSceneAudioUrl } from './voice-actions';
-import { startVideoRender, getRenderState } from './render-actions';
+import { startVideoRender, getRenderState, startPipelineRun } from './render-actions';
 import { resolveGate } from './gate-actions';
+import { loadStoryboard, type StoryboardFrame } from './pipeline-actions';
 import { retryGeneration } from './regenerate-actions';
 import { deleteVideo } from './delete-actions';
 import { MusicPanel } from './MusicPanel';
@@ -77,6 +78,8 @@ export function Editor({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewJobId, setPreviewJobId] = useState<string | null>(null);
   const [gateBusy, setGateBusy] = useState(false);
+  const [awaitingStoryboard, setAwaitingStoryboard] = useState(false);
+  const [storyboardFrames, setStoryboardFrames] = useState<StoryboardFrame[]>([]);
 
   const router = useRouter();
   const [recoveryBusy, setRecoveryBusy] = useState(false);
@@ -377,16 +380,18 @@ export function Editor({
     [onSetShotResource],
   );
 
+  // Kick off render state: set the new render id and reset status/url/elapsed.
+  const begin = useCallback((renderId: string) => {
+    setRenderId(renderId);
+    setRenderStatus('queued');
+    setRenderUrl(null);
+    setRenderElapsed(0);
+  }, []);
+
   // Generate Video: snapshot + compose + render. Handles the completeness gate —
   // a stale-scenes block prompts for an explicit override (honest mismatch).
   const handleGenerate = useCallback(async () => {
     setRenderError(null);
-    const begin = (renderId: string) => {
-      setRenderId(renderId);
-      setRenderStatus('queued');
-      setRenderUrl(null);
-      setRenderElapsed(0);
-    };
     const res = await startVideoRender(videoId, false);
     if (!('blocked' in res)) {
       begin(res.renderId);
@@ -402,7 +407,7 @@ export function Editor({
       if ('blocked' in retry) setRenderError(parseRenderError('Render is still blocked.'));
       else begin(retry.renderId);
     }
-  }, [videoId]);
+  }, [videoId, begin]);
 
   const onResolveGate = useCallback(async (decision: 'approve' | 'reject') => {
     if (!previewJobId) return;
@@ -411,7 +416,7 @@ export function Editor({
       const res = await resolveGate(previewJobId, decision);
       // On success the render poll/Realtime reconciles: approve → render continues;
       // reject → render becomes failed (the RenderErrorCard shows). Clear optimistically.
-      if (res.ok) setAwaitingPreview(false);
+      if (res.ok) { setAwaitingPreview(false); setAwaitingStoryboard(false); }
     } finally {
       setGateBusy(false);
     }
@@ -431,6 +436,7 @@ export function Editor({
         setAwaitingPreview(s.awaitingPreview);
         setPreviewUrl(s.previewUrl);
         setPreviewJobId(s.jobId);
+        setAwaitingStoryboard(s.awaitingStoryboard);
         if (s.status === 'failed') setRenderError(parseRenderError(s.error ?? 'Render failed.'));
       } catch {
         /* transient; keep polling */
@@ -443,6 +449,13 @@ export function Editor({
       clearInterval(id);
     };
   }, [renderId, renderStatus]);
+
+  useEffect(() => {
+    if (!awaitingStoryboard) return;
+    let active = true;
+    void loadStoryboard(videoId).then((frames) => { if (active) setStoryboardFrames(frames); });
+    return () => { active = false; };
+  }, [awaitingStoryboard, videoId]);
 
   const ordered = scenes.slice().sort((a, b) => a.position - b.position);
   const targets = scenes.filter((s) => SYNTH_TARGET.has(s.audio_status));
@@ -569,16 +582,53 @@ export function Editor({
                     ? `Synthesize all ${unsynthesized} remaining scene${unsynthesized === 1 ? '' : 's'} to render`
                     : 'Compose & render the video with voiceover'}
             </span>
-            <button
-              type="button"
-              disabled={!canRender}
-              onClick={() => handleGenerate()}
-              className="rounded-md border border-black/15 px-2.5 py-1 font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
-            >
-              {renderActive ? 'Generating…' : 'Generate Video'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={!canRender}
+                onClick={() => handleGenerate()}
+                className="rounded-md border border-black/15 px-2.5 py-1 font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+              >
+                {renderActive ? 'Generating…' : 'Generate Video'}
+              </button>
+              <button
+                type="button"
+                disabled={!canRender}
+                onClick={async () => {
+                  const res = await startPipelineRun(videoId, false);
+                  if (!('blocked' in res)) begin(res.renderId);
+                }}
+                className="rounded-md border border-black/15 px-2.5 py-1 font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+              >
+                Auto-produce
+              </button>
+            </div>
           </div>
           {renderError && <RenderErrorCard error={renderError} />}
+          {awaitingStoryboard && (
+            <div className="space-y-2 rounded-md border border-violet-500/40 bg-violet-500/10 p-2 text-xs">
+              <p className="font-medium">Storyboard ready — approve to render, or reject to discard this run.</p>
+              <div className="grid grid-cols-3 gap-2">
+                {storyboardFrames.map((f) => (
+                  <figure key={f.shotId} className="space-y-1">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={f.keyframeUrl} alt={f.label} className="w-full rounded border border-black/10 dark:border-white/10" />
+                    <figcaption className="truncate opacity-70">{f.label}</figcaption>
+                  </figure>
+                ))}
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button type="button" disabled={gateBusy} onClick={() => onResolveGate('reject')}
+                  className="rounded-md border border-red-500/40 px-2.5 py-1 font-medium text-red-600 enabled:hover:bg-red-500/10 disabled:opacity-40">
+                  {gateBusy ? 'Working…' : 'Reject'}
+                </button>
+                <button type="button" disabled={gateBusy} onClick={() => onResolveGate('approve')}
+                  className="rounded-md border border-black/15 px-2.5 py-1 font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]">
+                  {gateBusy ? 'Working…' : 'Approve'}
+                </button>
+              </div>
+            </div>
+          )}
           {awaitingPreview && previewUrl && (
             <div className="space-y-2 rounded-md border border-blue-500/40 bg-blue-500/10 p-2 text-xs">
               <p className="font-medium">Preview ready — approve to finish, or reject to discard this render.</p>
