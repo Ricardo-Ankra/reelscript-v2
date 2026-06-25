@@ -8,6 +8,7 @@ import {
   ACTIVE_JOB_STATUSES,
   type JobRow,
   isAwaitingPreview,
+  isAwaitingStoryboard,
   gatePhaseLabel,
 } from './monitor.ts';
 
@@ -70,4 +71,11 @@ test('gatePhaseLabel: friendly for the preview gate, passthrough otherwise', () 
   assert.equal(gatePhaseLabel('awaiting_storyboard_review'), 'Awaiting storyboard review');
   assert.equal(gatePhaseLabel('rendering'), 'rendering');
   assert.equal(gatePhaseLabel(null), '');
+});
+
+test('isAwaitingStoryboard: true only for paused + storyboard phase', () => {
+  assert.equal(isAwaitingStoryboard({ status: 'paused', phase: 'awaiting_storyboard_review' }), true);
+  assert.equal(isAwaitingStoryboard({ status: 'running', phase: 'awaiting_storyboard_review' }), false);
+  assert.equal(isAwaitingStoryboard({ status: 'paused', phase: 'awaiting_preview_review' }), false);
+  assert.equal(isAwaitingStoryboard({ status: 'paused', phase: null }), false);
 });

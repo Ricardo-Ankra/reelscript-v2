@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { partitionJobs, jobStatusLabel, isCancellable, isRetryable, isAwaitingPreview, gatePhaseLabel, type JobRow } from '@/lib/jobs/monitor';
+import { partitionJobs, jobStatusLabel, isCancellable, isRetryable, isAwaitingPreview, isAwaitingStoryboard, gatePhaseLabel, type JobRow } from '@/lib/jobs/monitor';
 import { cancelJob, loadJobs } from './actions';
 import { retryGeneration } from '../videos/[id]/regenerate-actions';
 import { parseRenderError } from '@/lib/errors/render-error';
@@ -154,7 +154,7 @@ function JobItem({
             {busy ? 'Retrying…' : 'Retry'}
           </button>
         )}
-        {isAwaitingPreview(job) && job.videoId && (
+        {(isAwaitingPreview(job) || isAwaitingStoryboard(job)) && job.videoId && (
           <Link
             href={`/videos/${job.videoId}`}
             className="shrink-0 rounded-md border border-black/15 px-2.5 py-1 text-xs font-medium enabled:hover:bg-black/[0.04] dark:border-white/20 dark:hover:bg-white/[0.06]"
