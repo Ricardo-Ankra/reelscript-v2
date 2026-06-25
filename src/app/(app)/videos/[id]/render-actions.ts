@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { signedGetUrl } from '@/lib/r2';
 import { inngest } from '@/lib/inngest/client';
 import { renderIdempotencyKey } from '@/lib/composition/idempotency';
+import { GATE_PHASE } from '@/lib/gates/gate';
 
 // Phase 4 "Generate Video" (spec 6.5). Validates completeness (no not_synthesized
 // scenes; stale needs explicit override), snapshots the live scenes into an
@@ -128,24 +129,50 @@ export async function startVideoRender(
   return { renderId, jobId, reused: false };
 }
 
-// Polled/subscribed by the editor; returns a signed playback URL once complete.
+// Polled/subscribed by the editor; returns a signed playback URL once complete, plus the
+// preview-gate state (the render's job paused at the preview gate) + a signed URL of the
+// graded base for in-editor preview. Additive fields — existing callers ignore them.
 export async function getRenderState(
   renderId: string,
-): Promise<{ status: string; url: string | null; error: unknown }> {
+): Promise<{
+  status: string;
+  url: string | null;
+  error: unknown;
+  awaitingPreview: boolean;
+  previewUrl: string | null;
+  jobId: string | null;
+}> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('renders')
-    .select('status, output_r2_key, error')
+    .select('status, output_r2_key, base_output_r2_key, error')
     .eq('id', renderId)
     .single();
   if (error || !data) throw new Error(error?.message ?? 'render not found');
+
   let url: string | null = null;
   if (data.status === 'complete' && data.output_r2_key) {
     url = await signedGetUrl(data.output_r2_key as string, 60 * 60);
   }
+
+  // Gate state lives on the job (status='paused' + phase). Surface it + the graded base.
+  const { data: job } = await supabase
+    .from('jobs')
+    .select('id, status, phase')
+    .eq('render_id', renderId)
+    .maybeSingle();
+  const awaitingPreview = job?.status === 'paused' && job?.phase === GATE_PHASE.preview;
+  let previewUrl: string | null = null;
+  if (awaitingPreview && data.base_output_r2_key) {
+    previewUrl = await signedGetUrl(data.base_output_r2_key as string, 60 * 60);
+  }
+
   return {
     status: data.status as string,
     url,
     error: data.error ?? null,
+    awaitingPreview: Boolean(awaitingPreview),
+    previewUrl,
+    jobId: (job?.id as string | null) ?? null,
   };
 }
