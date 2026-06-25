@@ -23,6 +23,7 @@ const VALID_FORM = {
   density: 'liberal',
   musicOn: true,
   colorLook: 'warm',
+  previewGate: false,
 };
 
 test('parseChannelBrand: empty brand_kit → defaults (Poppins, standard motion, default colors)', () => {
@@ -67,7 +68,7 @@ test('validateBrandForm: valid form returns the RPC pieces, tone trimmed', () =>
   assert.deepEqual(r.value.brandKitPatch.typography, { font: 'Montserrat' });
   assert.equal(r.value.brandKitPatch.motion_preset, 'punchy');
   assert.deepEqual(r.value.brandVoice, { tone: 'bold, direct' });
-  assert.deepEqual(r.value.defaults, { captions_on: false, caption_emphasis_density: 'liberal', music_on: true, color_look: 'warm' });
+  assert.deepEqual(r.value.defaults, { captions_on: false, caption_emphasis_density: 'liberal', music_on: true, color_look: 'warm', preview_gate: false });
 });
 
 test('validateBrandForm: blank tone is omitted from brandVoice', () => {
@@ -120,6 +121,7 @@ function baseForm(overrides: Record<string, unknown> = {}) {
     musicOn: false,
     density: 'sparing',
     colorLook: 'warm',
+    previewGate: false,
     ...overrides,
   };
 }
@@ -149,4 +151,18 @@ test('validateBrandForm writes color_look into defaults', () => {
 test('validateBrandForm rejects an invalid colorLook', () => {
   const res = validateBrandForm(baseForm({ colorLook: 'bogus' }));
   assert.equal(res.ok, false);
+});
+
+test('parseChannelBrand defaults previewGate to false; reads a stored value', () => {
+  assert.equal(parseChannelBrand({ name: 'C', brand_kit: {}, brand_voice: {}, defaults: {} }).previewGate, false);
+  assert.equal(
+    parseChannelBrand({ name: 'C', brand_kit: {}, brand_voice: {}, defaults: { preview_gate: true } }).previewGate,
+    true,
+  );
+});
+
+test('validateBrandForm writes preview_gate into defaults', () => {
+  const res = validateBrandForm(baseForm({ previewGate: true }));
+  assert.ok(res.ok);
+  if (res.ok) assert.equal(res.value.defaults.preview_gate, true);
 });

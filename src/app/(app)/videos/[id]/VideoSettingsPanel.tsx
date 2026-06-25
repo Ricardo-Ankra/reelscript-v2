@@ -116,6 +116,16 @@ export function VideoSettingsPanel({
       </label>
 
       <label className={rowClass}>
+        <span className="opacity-80">Preview gate</span>
+        <input
+          type="checkbox"
+          checked={settings.preview_gate}
+          disabled={busy}
+          onChange={(e) => save({ preview_gate: e.target.checked })}
+        />
+      </label>
+
+      <label className={rowClass}>
         <span className="opacity-80">Aspect ratio</span>
         <select
           className={ctrlClass}

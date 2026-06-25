@@ -181,6 +181,15 @@ export function BrandEditor({ channelId, initial }: { channelId: string; initial
             Music on
           </label>
           <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={form.previewGate}
+              onChange={(e) => update('previewGate', e.target.checked)}
+              disabled={busy}
+            />
+            Preview gate
+          </label>
+          <label className="flex items-center gap-2">
             Emphasis
             <select
               value={form.density}

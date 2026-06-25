@@ -28,6 +28,7 @@ export interface BrandForm {
   captionsOn: boolean;
   density: CaptionEmphasisDensity;
   musicOn: boolean;
+  previewGate: boolean;
   colorLook: ColorLook;
 }
 
@@ -43,6 +44,7 @@ export interface BrandSaveValue {
     captions_on: boolean;
     caption_emphasis_density: CaptionEmphasisDensity;
     music_on: boolean;
+    preview_gate: boolean;
     color_look: ColorLook;
   };
 }
@@ -77,11 +79,12 @@ export function parseChannelBrand(row: {
     ? (d.caption_emphasis_density as CaptionEmphasisDensity)
     : DEFAULT_DENSITY;
   const musicOn = typeof d.music_on === 'boolean' ? d.music_on : DEFAULT_MUSIC_ON;
+  const previewGate = typeof d.preview_gate === 'boolean' ? d.preview_gate : false;
   const colorLook = COLOR_LOOKS.includes(d.color_look as ColorLook)
     ? (d.color_look as ColorLook)
     : DEFAULT_COLOR_LOOK;
 
-  return { name: row.name, colors, font, motion: baked.motion, tone, captionsOn, density, musicOn, colorLook };
+  return { name: row.name, colors, font, motion: baked.motion, tone, captionsOn, density, musicOn, previewGate, colorLook };
 }
 
 // Validate a form submission. ALL 8 ColorKeys required (colors is replaced
@@ -111,7 +114,7 @@ export function validateBrandForm(
   if (!DENSITIES.includes(f.density as CaptionEmphasisDensity)) {
     return { ok: false, reason: 'Invalid emphasis density.' };
   }
-  if (typeof f.captionsOn !== 'boolean' || typeof f.musicOn !== 'boolean') {
+  if (typeof f.captionsOn !== 'boolean' || typeof f.musicOn !== 'boolean' || typeof f.previewGate !== 'boolean') {
     return { ok: false, reason: 'Invalid default toggle.' };
   }
   if (!COLOR_LOOKS.includes(f.colorLook as ColorLook)) {
@@ -131,6 +134,7 @@ export function validateBrandForm(
         captions_on: f.captionsOn,
         caption_emphasis_density: f.density as CaptionEmphasisDensity,
         music_on: f.musicOn,
+        preview_gate: f.previewGate as boolean,
         color_look: f.colorLook as ColorLook,
       },
     },
