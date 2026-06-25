@@ -295,6 +295,43 @@ authoritative and the `docs/` copy remains the design record.
         I/O is the only untested surface, by design, like remux); note a transient settings-read
         failure biases toward grade-with-`neutral` rather than skip. 5 tasks subagent-driven.
         Spec/plan: `docs/superpowers/{specs,plans}/2026-06-25-v2-slice3b-color-look*`.
+    - **Slice 4 — human gates (G2 preview) (2026-06-25). SHIPPED, merged to main (merge `a0aa2b1`),
+      440 tests + tsc/lint/build(17/17) green, final Opus review READY TO MERGE.** Additive,
+      **no migration**; the codebase's **first `step.waitForEvent`**. Adds an **opt-in human preview
+      gate**: when on, a render pauses after the graded base MP4 and waits for the operator to
+      **Approve** (→ music + finalize) or **Reject** (→ terminate, recoverable) in-app. Off by default
+      ⇒ **byte-identical to today**. Also ships the **reusable `runGate` primitive** (Slice 6 reuses it
+      for the storyboard gate G1 — built but unwired here; no production pipeline feeds G1 yet).
+      **Locked (Option A):** prove the mechanism end-to-end via G2 (the one place an assembled/graded
+      base exists today); gate state lives **entirely on the existing `jobs` row** (`status='paused'` —
+      the enum value existed but was written by nothing — + `phase='awaiting_preview_review'`), surfaced
+      through the **existing jobs Realtime + the editor's render poll**; preview = the **graded
+      `base_output_r2_key`, pre-music** (music is a deterministic post-pass on approve); reject
+      **terminates** (recoverable via edit + re-render, NOT an auto-revise loop — that's Slice 6);
+      **7-day timeout → auto-reject** (an unreviewed render never silently ships). Pure
+      `src/lib/gates/gate.ts` (TDD): `GateKind='storyboard'|'preview'`, `GateDecision='approve'|'reject'`,
+      `GATE_EVENT='pipeline/gate.resolved'`, `GATE_TIMEOUT='7d'`, `GATE_PHASE`, `parseGateDecision`,
+      `gateResolution` (null/malformed → `reject`). `preview_gate:boolean` (default false) joins the
+      `VideoSettings` contract → inherits the channel-default ⊕ override machinery (`create-settings`)
+      with no change there. `render.ts`: `runGate(step,admin,{jobId,kind})` (durable `enter-gate-<kind>`
+      → `step.waitForEvent('human-gate-<kind>', {event:GATE_EVENT, timeout, if:'async.data.jobId ==
+      event.data.jobId'})` — the **same correlation expr the proven `cancelOn` uses**, so a `jobs/cancel`
+      still cancels a run suspended at the gate) + a `resolve-preview-gate` step + the gate branch
+      (reject→render `failed`+`{phase:'preview_gate'}`/job failed; approve→job `running`/phase `encoding`
+      → unchanged music/finalize). **Distinct names from the AUTOMATED `gate1`/`gate2`** (compose-valid +
+      smoke-frame QA — machine checks, not these). `resolveGate(jobId,decision)` (`gate-actions.ts`,
+      mirrors `cancelJob`: account-scoped + paused-guard + `inngest.send{jobId,accountId,decision}`, no row
+      write — the suspended fn transitions on resume); `getRenderState` += additive `awaitingPreview`/
+      `previewUrl` (signs the graded base)/`jobId`. Editor preview-review banner (base video + Approve/
+      Reject, via the existing 3s poll); `/jobs` friendly `gatePhaseLabel` + Review link
+      (`isAwaitingPreview`, `monitor.ts`). Per-video toggle (`VideoSettingsPanel`) + channel default
+      (`brand.ts`/`BrandEditor`). **Final Opus verified all 4 paths** {off / approve / reject / timeout}
+      leave consistent state (none stuck `paused`); zero migration; import discipline correct (node:test
+      modules relative-import `gates/gate`, build files `@/`). **Operator runtime checks (untested by
+      design, like remux/gate2):** confirm Inngest actually suspends/resumes on `pipeline/gate.resolved`
+      (watch the dev-port-drift class of issue), run the on→approve/reject/cancel + off matrix; banner
+      appears within ~3s (poll latency). 7 tasks subagent-driven. Spec/plan:
+      `docs/superpowers/{specs,plans}/2026-06-25-v2-slice4-preview-gate*`.
   - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
     the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
     redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel
