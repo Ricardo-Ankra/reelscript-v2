@@ -7,6 +7,8 @@ import {
   partitionJobs,
   ACTIVE_JOB_STATUSES,
   type JobRow,
+  isAwaitingPreview,
+  gatePhaseLabel,
 } from './monitor.ts';
 
 test('isCancellable: true for active statuses only', () => {
@@ -56,8 +58,6 @@ test('isRetryable: only failed/cancelled script_generation', () => {
   }
 });
 
-import { isAwaitingPreview, gatePhaseLabel } from './monitor.ts';
-
 test('isAwaitingPreview: true only for paused + preview phase', () => {
   assert.equal(isAwaitingPreview({ status: 'paused', phase: 'awaiting_preview_review' }), true);
   assert.equal(isAwaitingPreview({ status: 'running', phase: 'awaiting_preview_review' }), false);
@@ -67,6 +67,7 @@ test('isAwaitingPreview: true only for paused + preview phase', () => {
 
 test('gatePhaseLabel: friendly for the preview gate, passthrough otherwise', () => {
   assert.equal(gatePhaseLabel('awaiting_preview_review'), 'Awaiting preview review');
+  assert.equal(gatePhaseLabel('awaiting_storyboard_review'), 'Awaiting storyboard review');
   assert.equal(gatePhaseLabel('rendering'), 'rendering');
   assert.equal(gatePhaseLabel(null), '');
 });
