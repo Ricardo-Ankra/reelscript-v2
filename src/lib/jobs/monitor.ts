@@ -37,6 +37,11 @@ export function isAwaitingPreview(job: { status: string; phase: string | null })
   return job.status === 'paused' && job.phase === GATE_PHASE.preview;
 }
 
+// A pipeline job suspended at the G1 storyboard gate (V2 Slice 6a).
+export function isAwaitingStoryboard(job: { status: string; phase: string | null }): boolean {
+  return job.status === 'paused' && job.phase === GATE_PHASE.storyboard;
+}
+
 // Friendly label for a gate phase; falls through to the raw phase (or '' for null).
 const GATE_PHASE_LABELS: Record<string, string> = {
   [GATE_PHASE.preview]: 'Awaiting preview review',

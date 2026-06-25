@@ -29,7 +29,8 @@
     "smoke:primitive": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/primitive-bundle-smoke.ts",
     "drive:primitive": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/drive-primitive.ts",
     "seed:effects": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/seed-effects.ts",
-    "smoke:probe": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/smoke-probe.ts"
+    "smoke:probe": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/smoke-probe.ts",
+    "drive:pipeline": "node --env-file=.env.local --experimental-strip-types --import ./scripts/register-smoke-loader.mjs scripts/drive-pipeline.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",

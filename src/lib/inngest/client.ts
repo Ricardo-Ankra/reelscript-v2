@@ -7,6 +7,12 @@ import type { VoiceSettings } from '@/lib/voice/alignment';
 // video to compose from (spec 13.1 / api-surface InngestEvents).
 export type RenderStartData = { jobId: string; renderId: string; videoId: string };
 
+// pipeline/start drives the master orchestration (V2 Slice 6a): from a voiced video, fan
+// out generation + ingest, run the G1 storyboard gate, then the render. One pipeline job
+// owns the run; its jobId threads into every step.invoke'd child so a jobs/cancel cascades.
+// renderId is the pre-created render row the master hands to renderVideo.
+export type PipelineStartData = { jobId: string; videoId: string; accountId: string; renderId: string };
+
 // render/sample is the Phase-1 debug harness: render a pre-stored spec by pointer,
 // no AI. Kept as the only no-AI path to exercise the Lambda spine in isolation.
 export type RenderSampleData = { renderId: string; specKey: string };

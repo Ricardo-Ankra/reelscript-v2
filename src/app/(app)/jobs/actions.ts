@@ -76,7 +76,7 @@ export async function cancelJob(
   if (error) return { ok: false, reason: error.message };
   if (!updated || updated.length === 0) return { ok: false, reason: 'Job not found.' };
 
-  if ((job.type as string) === 'render' && job.render_id) {
+  if (((job.type as string) === 'render' || (job.type as string) === 'pipeline') && job.render_id) {
     await supabase
       .from('renders')
       .update({ status: 'failed', error: { cancelled: true } })
