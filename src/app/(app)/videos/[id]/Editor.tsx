@@ -8,6 +8,7 @@ import { setShotResource, setShotVisualBrief } from './shot-actions';
 import { estimateSynthesisCost } from '@/lib/voice/estimate';
 import { synthesizeScenes, getSceneAudioUrl } from './voice-actions';
 import { startVideoRender, getRenderState } from './render-actions';
+import { resolveGate } from './gate-actions';
 import { retryGeneration } from './regenerate-actions';
 import { deleteVideo } from './delete-actions';
 import { MusicPanel } from './MusicPanel';
@@ -72,6 +73,10 @@ export function Editor({
   const [renderUrl, setRenderUrl] = useState<string | null>(initialRenderUrl);
   const [renderError, setRenderError] = useState<ParsedRenderError | null>(null);
   const [renderElapsed, setRenderElapsed] = useState(0); // seconds, ticked while active
+  const [awaitingPreview, setAwaitingPreview] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewJobId, setPreviewJobId] = useState<string | null>(null);
+  const [gateBusy, setGateBusy] = useState(false);
 
   const router = useRouter();
   const [recoveryBusy, setRecoveryBusy] = useState(false);
@@ -399,6 +404,19 @@ export function Editor({
     }
   }, [videoId]);
 
+  const onResolveGate = useCallback(async (decision: 'approve' | 'reject') => {
+    if (!previewJobId) return;
+    setGateBusy(true);
+    try {
+      const res = await resolveGate(previewJobId, decision);
+      // On success the render poll/Realtime reconciles: approve → render continues;
+      // reject → render becomes failed (the RenderErrorCard shows). Clear optimistically.
+      if (res.ok) setAwaitingPreview(false);
+    } finally {
+      setGateBusy(false);
+    }
+  }, [previewJobId]);
+
   // Poll the render until it completes (gives us the signed playback URL too).
   useEffect(() => {
     if (!renderId) return;
@@ -410,6 +428,9 @@ export function Editor({
         if (!active) return;
         setRenderStatus(s.status);
         if (s.url) setRenderUrl(s.url);
+        setAwaitingPreview(s.awaitingPreview);
+        setPreviewUrl(s.previewUrl);
+        setPreviewJobId(s.jobId);
         if (s.status === 'failed') setRenderError(parseRenderError(s.error ?? 'Render failed.'));
       } catch {
         /* transient; keep polling */
@@ -558,6 +579,35 @@ export function Editor({
             </button>
           </div>
           {renderError && <RenderErrorCard error={renderError} />}
+          {awaitingPreview && previewUrl && (
+            <div className="space-y-2 rounded-md border border-blue-500/40 bg-blue-500/10 p-2 text-xs">
+              <p className="font-medium">Preview ready — approve to finish, or reject to discard this render.</p>
+              <video
+                key={previewUrl}
+                src={previewUrl}
+                controls
+                className="w-full rounded-md border border-black/10 dark:border-white/10"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={gateBusy}
+                  onClick={() => onResolveGate('reject')}
+                  className="rounded-md border border-red-500/40 px-2.5 py-1 font-medium text-red-600 enabled:hover:bg-red-500/10 disabled:opacity-40"
+                >
+                  {gateBusy ? 'Working…' : 'Reject'}
+                </button>
+                <button
+                  type="button"
+                  disabled={gateBusy}
+                  onClick={() => onResolveGate('approve')}
+                  className="rounded-md border border-black/15 px-2.5 py-1 font-medium enabled:hover:bg-black/[0.04] disabled:opacity-40 dark:border-white/20 dark:enabled:hover:bg-white/[0.06]"
+                >
+                  {gateBusy ? 'Working…' : 'Approve'}
+                </button>
+              </div>
+            </div>
+          )}
           {renderUrl && (
             <video
               key={renderUrl}
