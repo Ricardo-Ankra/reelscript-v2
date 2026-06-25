@@ -22,6 +22,7 @@ const VALID_FORM = {
   captionsOn: false,
   density: 'liberal',
   musicOn: true,
+  colorLook: 'warm',
 };
 
 test('parseChannelBrand: empty brand_kit → defaults (Poppins, standard motion, default colors)', () => {
@@ -66,7 +67,7 @@ test('validateBrandForm: valid form returns the RPC pieces, tone trimmed', () =>
   assert.deepEqual(r.value.brandKitPatch.typography, { font: 'Montserrat' });
   assert.equal(r.value.brandKitPatch.motion_preset, 'punchy');
   assert.deepEqual(r.value.brandVoice, { tone: 'bold, direct' });
-  assert.deepEqual(r.value.defaults, { captions_on: false, caption_emphasis_density: 'liberal', music_on: true });
+  assert.deepEqual(r.value.defaults, { captions_on: false, caption_emphasis_density: 'liberal', music_on: true, color_look: 'warm' });
 });
 
 test('validateBrandForm: blank tone is omitted from brandVoice', () => {
@@ -93,4 +94,59 @@ test('validateBrandForm: rejects bad hex, off-allowlist font, bad motion/density
   assert.equal(validateBrandForm({ ...VALID_FORM, motion: 'wild' }).ok, false);
   assert.equal(validateBrandForm({ ...VALID_FORM, density: 'lots' }).ok, false);
   assert.equal(validateBrandForm({ ...VALID_FORM, name: '   ' }).ok, false);
+});
+
+// --- colorLook tests (Task 4) ---
+
+const VALID_COLORS = {
+  background: '#000000',
+  foreground: '#ffffff',
+  primary: '#ff0000',
+  secondary: '#00ff00',
+  accent: '#0000ff',
+  bodyText: '#cccccc',
+  positive: '#00cc66',
+  negative: '#cc0033',
+};
+
+function baseForm(overrides: Record<string, unknown> = {}) {
+  return {
+    name: 'Chan',
+    colors: VALID_COLORS,
+    font: 'Poppins',
+    motion: 'standard',
+    tone: '',
+    captionsOn: true,
+    musicOn: false,
+    density: 'sparing',
+    colorLook: 'warm',
+    ...overrides,
+  };
+}
+
+test('parseChannelBrand defaults colorLook to neutral when absent', () => {
+  const form = parseChannelBrand({ name: 'C', brand_kit: {}, brand_voice: {}, defaults: {} });
+  assert.equal(form.colorLook, 'neutral');
+});
+
+test('parseChannelBrand reads a stored colorLook and falls back for an invalid one', () => {
+  assert.equal(
+    parseChannelBrand({ name: 'C', brand_kit: {}, brand_voice: {}, defaults: { color_look: 'cool' } }).colorLook,
+    'cool',
+  );
+  assert.equal(
+    parseChannelBrand({ name: 'C', brand_kit: {}, brand_voice: {}, defaults: { color_look: 'bogus' } }).colorLook,
+    'neutral',
+  );
+});
+
+test('validateBrandForm writes color_look into defaults', () => {
+  const res = validateBrandForm(baseForm({ colorLook: 'punch' }));
+  assert.ok(res.ok);
+  if (res.ok) assert.equal(res.value.defaults.color_look, 'punch');
+});
+
+test('validateBrandForm rejects an invalid colorLook', () => {
+  const res = validateBrandForm(baseForm({ colorLook: 'bogus' }));
+  assert.equal(res.ok, false);
 });

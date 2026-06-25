@@ -4,6 +4,7 @@
 import { DEFAULT_THEME, bakeTheme, type BrandKit } from '../composition/theme';
 import { isBrandFont, type BrandFont } from './fonts';
 import { validateChannelName } from './validate';
+import { type ColorLook, COLOR_LOOKS, DEFAULT_COLOR_LOOK } from '../color/looks';
 
 export type Motion = 'subtle' | 'standard' | 'punchy';
 export type CaptionEmphasisDensity = 'off' | 'sparing' | 'liberal';
@@ -27,6 +28,7 @@ export interface BrandForm {
   captionsOn: boolean;
   density: CaptionEmphasisDensity;
   musicOn: boolean;
+  colorLook: ColorLook;
 }
 
 export interface BrandSaveValue {
@@ -41,6 +43,7 @@ export interface BrandSaveValue {
     captions_on: boolean;
     caption_emphasis_density: CaptionEmphasisDensity;
     music_on: boolean;
+    color_look: ColorLook;
   };
 }
 
@@ -74,8 +77,11 @@ export function parseChannelBrand(row: {
     ? (d.caption_emphasis_density as CaptionEmphasisDensity)
     : DEFAULT_DENSITY;
   const musicOn = typeof d.music_on === 'boolean' ? d.music_on : DEFAULT_MUSIC_ON;
+  const colorLook = COLOR_LOOKS.includes(d.color_look as ColorLook)
+    ? (d.color_look as ColorLook)
+    : DEFAULT_COLOR_LOOK;
 
-  return { name: row.name, colors, font, motion: baked.motion, tone, captionsOn, density, musicOn };
+  return { name: row.name, colors, font, motion: baked.motion, tone, captionsOn, density, musicOn, colorLook };
 }
 
 // Validate a form submission. ALL 8 ColorKeys required (colors is replaced
@@ -108,6 +114,9 @@ export function validateBrandForm(
   if (typeof f.captionsOn !== 'boolean' || typeof f.musicOn !== 'boolean') {
     return { ok: false, reason: 'Invalid default toggle.' };
   }
+  if (!COLOR_LOOKS.includes(f.colorLook as ColorLook)) {
+    return { ok: false, reason: 'Invalid colour look.' };
+  }
 
   const toneRaw = typeof f.tone === 'string' ? f.tone.trim() : '';
   const brandVoice: { tone?: string } = toneRaw ? { tone: toneRaw } : {};
@@ -122,6 +131,7 @@ export function validateBrandForm(
         captions_on: f.captionsOn,
         caption_emphasis_density: f.density as CaptionEmphasisDensity,
         music_on: f.musicOn,
+        color_look: f.colorLook as ColorLook,
       },
     },
   };
