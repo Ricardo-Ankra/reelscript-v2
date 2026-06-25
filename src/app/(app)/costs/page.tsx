@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { totalCost, sumByVideo, formatUsd, type CostEvent } from '@/lib/costs/aggregate';
+import { BudgetControl } from './BudgetControl';
 
 // Account cost rollup (Phase 8). RLS scopes both reads to the caller's account.
 // The grand total counts every cost event (including any with a null video_id);
@@ -21,6 +22,14 @@ export default async function CostsPage() {
     costUsd: Number(r.cost_usd ?? 0),
   }));
 
+  const { data: account } = await supabase
+    .from('accounts')
+    .select('monthly_cost_alert_usd, monthly_cost_alert_on')
+    .maybeSingle();
+  const capUsd =
+    account?.monthly_cost_alert_usd != null ? Number(account.monthly_cost_alert_usd) : null;
+  const alertOn = Boolean(account?.monthly_cost_alert_on);
+
   const byVideo = sumByVideo(events);
   const grand = totalCost(events);
   const rows = videos ?? [];
@@ -34,6 +43,8 @@ export default async function CostsPage() {
         </div>
         <span className="text-lg font-medium">{formatUsd(grand)} total</span>
       </div>
+
+      <BudgetControl initialCapUsd={capUsd} initialEnabled={alertOn} currentSpendUsd={grand} />
 
       {rows.length === 0 ? (
         <p className="text-sm opacity-70">No videos yet.</p>
