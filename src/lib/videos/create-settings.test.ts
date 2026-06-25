@@ -25,6 +25,7 @@ test('parseChannelCreateOptions: reads the channel-stored full option set', () =
     caption_emphasis_density: 'liberal',
     music_on: true,
     color_look: 'neutral',
+    preview_gate: false,
   });
 });
 
@@ -60,6 +61,7 @@ test('mergeCreateSettings: valid override wins per key', () => {
     caption_emphasis_density: 'off',
     music_on: true,
     color_look: 'neutral',
+    preview_gate: false,
   });
 });
 
