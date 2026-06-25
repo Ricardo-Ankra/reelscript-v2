@@ -332,6 +332,52 @@ authoritative and the `docs/` copy remains the design record.
       (watch the dev-port-drift class of issue), run the on→approve/reject/cancel + off matrix; banner
       appears within ~3s (poll latency). 7 tasks subagent-driven. Spec/plan:
       `docs/superpowers/{specs,plans}/2026-06-25-v2-slice4-preview-gate*`.
+    - **Slice 5 (provenance ledger rollup + `Disclosure` overlay + platform AI-disclosure flag)
+      DROPPED 2026-06-25 per operator** — "provenance was not needed." The provenance *data* is
+      already captured (Slice 0 `shots.provenance` jsonb + 1b writes the 7-field Provenance per
+      generated shot); only the user-facing DISCLOSURE SURFACING is dropped. The columns stay
+      (harmless). If disclosure is ever needed, it's a self-contained additive slice over the
+      existing data.
+    - **Slice 6 — master `reelscript.pipeline` orchestration. Sub-decomposed 6a→6b** (the
+      orchestration spine is the de-riskable core; 6b budget guardrail deferred). The capstone
+      that finally connects the generative pipeline end-to-end (everything built behind-a-seam /
+      fire-on-nothing in 1b→4 gets a production trigger).
+      - **Slice 6a — pipeline spine + G1 storyboard gate (2026-06-25). SHIPPED, merged to main
+        (merge `12c8a6b`), 444 tests + tsc/lint/build(17/17) green, final Opus review READY TO
+        MERGE (1 Important found+fixed in-branch).** The codebase's **first `step.invoke`**. A new
+        `reelscriptPipeline` Inngest function (trigger `pipeline/start`), from a **voiced** video
+        (operator choice — entry is post-voice; auto-voice/full-prompt→video deferred), fans out
+        `generateShots` + `ingestShots` via **`Promise.all([step.invoke(...), step.invoke(...)])`**
+        (parallel, disjoint shot kinds, populating the `clip_key`/`footage_key` the render reads),
+        fans in, runs the **G1 storyboard gate** (`runGate(storyboard)` — only when the video has
+        ≥1 generative shot), then **`step.invoke(renderVideo)`** (which carries the automated
+        gate2 + the opt-in **G2** preview gate + music/finalize and completes the job). **One
+        `type='pipeline'` job owns the run; the master `jobId` is threaded into every invoked
+        child's data so each child's existing `cancelOn (async.data.jobId == event.data.jobId)`
+        matches → a `jobs/cancel` cascades to the whole tree.** `step.invoke('<id>', {function,
+        data})` — the `data` becomes the child's `event.data`, so **no child-function change**.
+        The two gates run **strictly sequentially** (G1 in the master step namespace fully resolves
+        before renderVideo's G2 runs in its OWN invoked-function namespace → never simultaneous →
+        `resolveGate(jobId, decision)` unambiguous). Reject = terminate `{phase:'storyboard_gate'}`
+        (recoverable, no auto-revise — deferred). Shared refactor: `runGate` extracted from
+        `render.ts` → `src/lib/inngest/run-gate.ts` (both import it). Migration `20260625120000`:
+        `job_type += 'pipeline'` (the ONLY schema change, additive, applied live) + `PipelineStartData`.
+        Entry: `prepareRender` extracted from `startVideoRender` (manual `Generate Video` path
+        byte-identical) + new `startPipelineRun` (type=pipeline job + `pipeline/start`). UI:
+        "**Auto-produce**" button + a **storyboard review banner** (keyframe thumbnail grid +
+        Approve/Reject) driven by `getRenderState.awaitingStoryboard` (additive) + `loadStoryboard`
+        (signs generative `keyframe_first_key` stills via pure `storyboardLabel`); `/jobs`
+        `isAwaitingStoryboard` + Review link at either gate. `scripts/drive-pipeline.ts`
+        (`npm run drive:pipeline`) — **operator** headless proof against the fake (auto-approves
+        G1). **Important found+FIXED in-branch (`9ec18cf`):** `cancelJob` only reset the render row
+        for `type='render'` → a cancelled **pipeline** job left its render stuck in-flight (editor
+        dead-end + orphaned-render idempotency reuse); guard extended to `render||pipeline`. **6b
+        budget guardrail** (`accounts.monthly_cost_alert_usd` is read NOWHERE today — pre-flight
+        estimate+abort) and the auto-revise loop are deferred. **Operator gates (untested by design,
+        like every prior pipeline slice):** `drive:pipeline` proves the first `step.invoke` runtime
+        (data-thread + cancel cascade); fake fixtures live in the **dev-server** `.env.local`; watch
+        Inngest port-drift; exercise Cancel-on-paused. 8 tasks subagent-driven. Spec/plan:
+        `docs/superpowers/{specs,plans}/2026-06-25-v2-slice6a-pipeline-spine*`.
   - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
     the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
     redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel
