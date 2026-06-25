@@ -338,10 +338,12 @@ authoritative and the `docs/` copy remains the design record.
       generated shot); only the user-facing DISCLOSURE SURFACING is dropped. The columns stay
       (harmless). If disclosure is ever needed, it's a self-contained additive slice over the
       existing data.
-    - **Slice 6 — master `reelscript.pipeline` orchestration. Sub-decomposed 6a→6b** (the
-      orchestration spine is the de-riskable core; 6b budget guardrail deferred). The capstone
-      that finally connects the generative pipeline end-to-end (everything built behind-a-seam /
-      fire-on-nothing in 1b→4 gets a production trigger).
+    - **Slice 6 — master `reelscript.pipeline` orchestration. Sub-decomposed 6a→6b, BOTH
+      SHIPPED** (6a orchestration spine + 6b budget guardrail). The capstone that finally
+      connects the generative pipeline end-to-end (everything built behind-a-seam /
+      fire-on-nothing in 1b→4 gets a production trigger). **The V2 Higgsfield program is now
+      complete through Slice 6** (Slice 5 dropped); remaining work (real Higgsfield/image
+      adapters, per-entity continuity, auto-revise loop, real generation metering) is deferred.
       - **Slice 6a — pipeline spine + G1 storyboard gate (2026-06-25). SHIPPED, merged to main
         (merge `12c8a6b`), 444 tests + tsc/lint/build(17/17) green, final Opus review READY TO
         MERGE (1 Important found+fixed in-branch).** The codebase's **first `step.invoke`**. A new
@@ -378,6 +380,42 @@ authoritative and the `docs/` copy remains the design record.
         (data-thread + cancel cascade); fake fixtures live in the **dev-server** `.env.local`; watch
         Inngest port-drift; exercise Cancel-on-paused. 8 tasks subagent-driven. Spec/plan:
         `docs/superpowers/{specs,plans}/2026-06-25-v2-slice6a-pipeline-spine*`.
+      - **Slice 6b — budget guardrail (2026-06-25). SHIPPED, merged to main (merge `f03fd26`),
+        461 tests + tsc/lint/build(17/17) green, final Opus review READY TO MERGE.** Additive,
+        **no migration**; a **pre-fan-out cost gate** in `reelscriptPipeline` that aborts an
+        Auto-produce run **before any spend** when the account's projected current-month cost
+        exceeds an operator-set cap. **Enforces the two pre-existing `accounts` columns
+        `monthly_cost_alert_usd`/`monthly_cost_alert_on`** (read/written **nowhere** before this).
+        **Locked:** **hard-block the pipeline ONLY** (the manual `Generate Video`/`startVideoRender`
+        path stays **unguarded** — a per-step operator action); **monthly aggregate** (sum
+        `cost_events.cost_usd` for the account, current UTC calendar month); **coarse pre-flight
+        estimate by design** (compose/render/generation aren't knowable pre-run + **generation
+        isn't metered yet** (fake provider) → `GEN_RATE_USD` is a **placeholder**); **off ⇒
+        byte-identical** to 6a. Pure `src/lib/costs/budget.ts` (TDD, zero imports): `GEN_RATE_USD`/
+        `PIPELINE_BASELINE_USD` (both `0.5`), `estimatePipelineCostUsd({generativeShotCount})`
+        (= baseline + floor/clamp·rate), `budgetDecision` (**block only when `alertOn && capUsd!=null
+        && projected > cap`** — strict `>`, off|no-cap→allow, cap-0+on freezes any non-zero spend),
+        `parseCostBudgetInput` (`''`/null→clear, numeric-string coerce, negative/non-finite→error),
+        `startOfUtcMonthIso(now)` (param for testability). `pipeline.ts` inserts a `budget-check`
+        `step.run` (reads cap/toggle + sums month `cost_events` `.gte(monthStart)` + counts
+        `kind='generative'` shots via scene-id indirection — **mirrors `check-storyboard`**;
+        `new Date()` legit in a step-body) + a `reject-budget` early-return **structurally identical
+        to the proven `reject-storyboard`** (marks render+job `failed` with `{phase:'budget',message,
+        projectedUsd}` — rides the existing `parseRenderError`/`RenderErrorCard` — then returns
+        **before any `step.invoke`**; recoverable: raise/clear the cap + re-trigger). The change is a
+        **pure insertion — zero deleted lines in `pipeline.ts`** (off-path falls straight through to
+        the unchanged fan-out). UI: a **Monthly-budget control on `/costs`** — `BudgetControl.tsx`
+        client island (dirty/Save, mirrors `ModelRoutingEditor`) → `setCostBudget` server action
+        (validates via `parseCostBudgetInput`, writes the 2 columns **directly under RLS** — the
+        `accounts_owner` `for all` policy permits the self-scoped `.update().eq('id',account.id)`,
+        **no RPC**); `page.tsx` reads the columns + renders the control (reuses existing `grand`/
+        `formatUsd`). **Deferred:** real generation metering (when the Higgsfield adapter lands —
+        then `GEN_RATE_USD` is the single tuning point or goes per-account), per-video cap, mid-run
+        budget kill (this is a start-gate, not a circuit-breaker), the auto-revise loop. **Operator
+        gate (untested by design, like every pipeline slice):** `drive:pipeline` with the cap set low
+        + enforcement on → run aborts with the budget error; off/high → proceeds as 6a. 4 tasks
+        subagent-driven. Spec/plan:
+        `docs/superpowers/{specs,plans}/2026-06-25-v2-slice6b-budget-guardrail*`.
   - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
     the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
     redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel
