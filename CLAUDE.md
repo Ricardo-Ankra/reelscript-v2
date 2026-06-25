@@ -259,6 +259,42 @@ authoritative and the `docs/` copy remains the design record.
         `duration_seconds`), first/last-frame chaining. Verified by gates + the existing `drive:render`
         operator path (Remotion render not unit-tested). 6 tasks subagent-driven. Spec/plan:
         `docs/superpowers/{specs,plans}/2026-06-24-v2-slice3a-assembly-skeleton*`.
+      - **Slice 3b — color (master look) (2026-06-25). SHIPPED, merged to main (merge `498f9d8`),
+        430 tests + tsc/lint/build(17/17) green, final Opus review READY TO MERGE.** Additive,
+        **no migration**; adds a subtle, per-channel-selectable master color grade applied to every
+        render as a **best-effort ffmpeg `-vf` post-pass** between the voiceover base MP4 and the
+        music re-mux — reusing the same `invokeRemux` ffmpeg-Lambda + base/final pattern as the
+        music remux. **Locked:** master-look only (per-shot match-grade deferred); mechanism =
+        **code-defined ffmpeg filter presets** (`eq`/`colorbalance`, **space-free/argv-safe**, NO
+        `curves`/`lut3d` this slice — `lut3d`/.cube is a clean future upgrade, same step + a 2nd
+        input); subtle by design; per-channel default `neutral` (zero-config), overridable per video;
+        **degrade-on-failure** (grade pass fails → render uses the ungraded base, logged). New pure
+        `src/lib/color/looks.ts` (TDD): `ColorLook = none|neutral|warm|cool|punch`, `COLOR_LOOKS`,
+        `DEFAULT_COLOR_LOOK`, `LOOK_LABELS`, `buildGradeFilter(look)→string|null` (null for
+        `none`/unknown → caller skips → byte-identical), `buildGradeArgs({inPath,outPath,filter})`
+        (libx264/yuv420p, **`-c:a copy`** — base is VO-only, `+faststart`). `color_look` joins the
+        `VideoSettings` contract (`settings.ts`, **relative import of looks** for node:test) so it
+        **inherits the channel-default ⊕ per-video-override machinery via `create-settings.ts` with
+        no change there** (DRY). `render.ts` inserts a durable `resolve-color-look` step
+        (`videos.settings`→`parseVideoSettings`) + a best-effort `grade-base` step (try/catch returns
+        the ungraded `baseKey`, never rethrows; on success writes `renders/<id>.graded.mp4` +
+        updates `base_output_r2_key` to the graded key **before** best-effort `deleteObject(baseKey)`,
+        threads `effectiveBaseKey` to the no-music `finalize`; music branch UNCHANGED — re-mux reads
+        the now-graded `base_output_r2_key`). UI: a **Look `<select>`** on the channel `BrandEditor`
+        (→ `channels.defaults.color_look` via `brand.ts` validate/parse, **relative looks import**)
+        + the per-video `VideoSettingsPanel` (autosaves `{color_look}` through the existing action).
+        Final Opus verified all 4 {grade succeeds/degrades}×{music on/off} combos leave
+        `output_r2_key` on a real object (no deleted-object window). **Behavioral note:** default
+        `neutral` is a REAL subtle grade, so existing videos re-rendered after 3b get it (intended
+        brand-consistency default; only explicit `none` is byte-identical). **Caught regression
+        (fixed, commit `7152e9f`):** adding `color_look` broke 2 `create-settings.test` full-shape
+        deepEqual assertions → added `color_look:'neutral'` to the expected literals (LESSON: run
+        FULL `npm test`, not a `--test-name-pattern` subset, when changing a shared contract).
+        **Deferred:** per-shot match-grade, operator-uploaded LUTs, `lut3d`/.cube looks, per-segment
+        grading. **Operator follow-up:** `drive:render` eyeball of a non-`none` look (ffmpeg-Lambda
+        I/O is the only untested surface, by design, like remux); note a transient settings-read
+        failure biases toward grade-with-`neutral` rather than skip. 5 tasks subagent-driven.
+        Spec/plan: `docs/superpowers/{specs,plans}/2026-06-25-v2-slice3b-color-look*`.
   - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
     the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
     redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel
