@@ -69,3 +69,24 @@ test('parseVideoSettings: invalid target_length (≤0) falls back to default', (
   const s2 = parseVideoSettings({ target_length: -5 });
   assert.equal(s2.target_length, SETTINGS_DEFAULTS.target_length);
 });
+
+test('color_look default is neutral', () => {
+  assert.equal(SETTINGS_DEFAULTS.color_look, 'neutral');
+  assert.equal(parseVideoSettings({}).color_look, 'neutral');
+});
+
+test('sanitizeSettingsPatch keeps a valid color_look', () => {
+  assert.equal(sanitizeSettingsPatch({ color_look: 'warm' }).color_look, 'warm');
+  assert.equal(sanitizeSettingsPatch({ color_look: 'none' }).color_look, 'none');
+});
+
+test('sanitizeSettingsPatch drops an invalid color_look', () => {
+  assert.equal('color_look' in sanitizeSettingsPatch({ color_look: 'bogus' }), false);
+  assert.equal('color_look' in sanitizeSettingsPatch({ color_look: 5 }), false);
+});
+
+test('parseVideoSettings round-trips a stored color_look', () => {
+  assert.equal(parseVideoSettings({ color_look: 'punch' }).color_look, 'punch');
+  // invalid stored value falls back to the default
+  assert.equal(parseVideoSettings({ color_look: 'nope' }).color_look, 'neutral');
+});

@@ -7,7 +7,10 @@ import {
 import { inngest, type RenderStartData, type RenderSampleData } from '../client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { serverEnv } from '@/lib/env.server';
-import { putObject, signedGetUrl } from '@/lib/r2';
+import { putObject, signedGetUrl, signedPutUrl, deleteObject } from '@/lib/r2';
+import { buildGradeFilter, buildGradeArgs } from '@/lib/color/looks';
+import { parseVideoSettings } from '@/lib/videos/settings';
+import { invokeRemux } from '@/lib/music/remux-invoke';
 import { anthropic } from '@/lib/ai/anthropic';
 import { loadModelRouting } from '@/lib/ai/model-routing.server';
 import { bakeTheme } from '@/lib/composition/theme';
@@ -316,6 +319,43 @@ export const renderVideo = inngest.createFunction(
       await admin.from('renders').update({ base_output_r2_key: baseKey }).eq('id', renderId);
     });
 
+    // --- master color look (V2 Slice 3b) -------------------------------------
+    // Resolve the look from the video's settings (the channel default was merged
+    // into video.settings at creation). Best-effort: a transient grade failure
+    // degrades to the ungraded base — color is non-essential, the video stays
+    // watchable. 'none'/unknown ⇒ filter is null ⇒ step skipped ⇒ byte-identical.
+    const colorLook = await step.run('resolve-color-look', async () => {
+      const { data: v } = await admin.from('videos').select('settings').eq('id', videoId).single();
+      return parseVideoSettings(v?.settings).color_look;
+    });
+    let effectiveBaseKey = baseKey;
+    const gradeFilter = buildGradeFilter(colorLook);
+    if (gradeFilter) {
+      effectiveBaseKey = await step.run('grade-base', async () => {
+        try {
+          const gradedKey = `renders/${renderId}.graded.mp4`;
+          const [inUrl, outUrl] = await Promise.all([
+            signedGetUrl(baseKey, 60 * 60),
+            signedPutUrl(gradedKey, 'video/mp4', 60 * 60),
+          ]);
+          const args = buildGradeArgs({ inPath: '/tmp/grade-in.mp4', outPath: '/tmp/grade-out.mp4', filter: gradeFilter });
+          const result = await invokeRemux({
+            args,
+            inputs: { '/tmp/grade-in.mp4': inUrl },
+            outputs: { '/tmp/grade-out.mp4': outUrl },
+          });
+          if (!result.ok) throw new Error(result.error ?? 'grade failed');
+          await admin.from('renders').update({ base_output_r2_key: gradedKey }).eq('id', renderId);
+          await deleteObject(baseKey).catch(() => {}); // best-effort cleanup of the ungraded base
+          return gradedKey;
+        } catch (e) {
+          // Degrade: keep the ungraded base as the result; the video is still watchable.
+          console.error(`grade-base degraded for render ${renderId}:`, e);
+          return baseKey;
+        }
+      });
+    }
+
     // --- caption sidecars (always exported when captions are on, spec 4.2.1) ---
     if (composed.captionsEnabled) {
       await step.run('caption-sidecars', async () => {
@@ -342,7 +382,7 @@ export const renderVideo = inngest.createFunction(
     await step.run('finalize', async () => {
       await admin
         .from('renders')
-        .update({ status: 'complete', output_r2_key: baseKey, render_date: new Date().toISOString() })
+        .update({ status: 'complete', output_r2_key: effectiveBaseKey, render_date: new Date().toISOString() })
         .eq('id', renderId);
       await admin.from('videos').update({ current_render_id: renderId }).eq('id', videoId);
       await admin.from('jobs').update({ status: 'complete', phase: 'done' }).eq('id', jobId);

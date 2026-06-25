@@ -9,6 +9,7 @@ import type {
   Motion,
   CaptionEmphasisDensity,
 } from '@/lib/channels/brand';
+import { COLOR_LOOKS, LOOK_LABELS } from '@/lib/color/looks';
 
 const COLOR_ORDER: ColorKey[] = [
   'background',
@@ -190,6 +191,21 @@ export function BrandEditor({ channelId, initial }: { channelId: string; initial
               {DENSITIES.map((d) => (
                 <option key={d} value={d}>
                   {d}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            Look
+            <select
+              value={form.colorLook}
+              onChange={(e) => update('colorLook', e.target.value as BrandForm['colorLook'])}
+              disabled={busy}
+              className={inputCls}
+            >
+              {COLOR_LOOKS.map((l) => (
+                <option key={l} value={l}>
+                  {LOOK_LABELS[l]}
                 </option>
               ))}
             </select>

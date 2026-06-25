@@ -2,6 +2,8 @@
 // from the UI and parses the stored settings JSON into typed values with defaults.
 // No react / server-only / network — unit-tested, shared by the panel + the action.
 
+import { type ColorLook, COLOR_LOOKS, DEFAULT_COLOR_LOOK } from '../color/looks';
+
 export type CaptionEmphasisDensity = 'off' | 'sparing' | 'liberal';
 export type AspectRatio = '9:16' | '1:1' | '16:9';
 export type Fps = 24 | 30; // literal union — 24 (cinematic) / 30 (standard social)
@@ -12,6 +14,7 @@ export interface VideoSettingsPatch {
   music_on?: boolean;
   aspect_ratio?: AspectRatio;
   fps?: Fps;
+  color_look?: ColorLook;
   // target_length intentionally not patchable in this slice
 }
 
@@ -21,6 +24,7 @@ export interface VideoSettings {
   music_on: boolean;
   aspect_ratio: AspectRatio;
   fps: Fps;
+  color_look: ColorLook;
   target_length: number; // read-only in this slice
 }
 
@@ -30,6 +34,7 @@ export const SETTINGS_DEFAULTS: VideoSettings = {
   music_on: false,
   aspect_ratio: '9:16',
   fps: 30,
+  color_look: DEFAULT_COLOR_LOOK,
   target_length: 30,
 };
 
@@ -51,6 +56,7 @@ export function sanitizeSettingsPatch(patch: unknown): VideoSettingsPatch {
     out.aspect_ratio = p.aspect_ratio as AspectRatio;
   }
   if (FPSES.includes(p.fps as Fps)) out.fps = p.fps as Fps;
+  if (COLOR_LOOKS.includes(p.color_look as ColorLook)) out.color_look = p.color_look as ColorLook;
   return out;
 }
 

@@ -8,6 +8,7 @@ import {
   type VideoSettings,
   type VideoSettingsPatch,
 } from '@/lib/videos/settings';
+import { COLOR_LOOKS, LOOK_LABELS } from '@/lib/color/looks';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
 const saveLabel: Record<SaveState, string> = { idle: '', saving: 'saving…', saved: 'saved ✓', failed: 'save failed' };
@@ -138,6 +139,22 @@ export function VideoSettingsPanel({
         >
           <option value={24}>24</option>
           <option value={30}>30</option>
+        </select>
+      </label>
+
+      <label className={rowClass}>
+        <span className="opacity-80">Look</span>
+        <select
+          className={ctrlClass}
+          value={settings.color_look}
+          disabled={busy}
+          onChange={(e) => save({ color_look: e.target.value as VideoSettings['color_look'] })}
+        >
+          {COLOR_LOOKS.map((l) => (
+            <option key={l} value={l}>
+              {LOOK_LABELS[l]}
+            </option>
+          ))}
         </select>
       </label>
 
