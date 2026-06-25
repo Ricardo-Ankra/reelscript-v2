@@ -49,7 +49,7 @@ import type { TtsAlignment } from '@/lib/voice/alignment';
 import { loadComposeRegistry } from '@/lib/primitives/registry-load';
 import { stripEmotionTags } from '@/lib/voice/profile';
 import { resolveProviderKey } from '@/lib/credentials/store';
-import { GATE_EVENT, GATE_TIMEOUT, GATE_PHASE, gateResolution, type GateKind, type GateDecision } from '@/lib/gates/gate';
+import { runGate } from '@/lib/inngest/run-gate';
 
 // =============================================================================
 // Phase 4 — the render pipeline (spec 13.1). One function: compose → gate1 →
@@ -977,22 +977,6 @@ type SpineParams = {
   framesPerLambda?: number;
 };
 
-// Human gate (V2 Slice 4): pause the job durably, then suspend the run waiting for the
-// in-app Approve/Reject event (correlated on jobId — the same key cancelOn uses, so a
-// jobs/cancel still cancels a run suspended here). A timeout/malformed event → reject.
-// `step` is `any` to match runLambdaSpine (Inngest's step types are awkward to thread).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function runGate(step: any, admin: ReturnType<typeof createAdminClient>, opts: { jobId: string; kind: GateKind }): Promise<GateDecision> {
-  await step.run(`enter-gate-${opts.kind}`, async () => {
-    await admin.from('jobs').update({ status: 'paused', phase: GATE_PHASE[opts.kind] }).eq('id', opts.jobId);
-  });
-  const ev = await step.waitForEvent(`human-gate-${opts.kind}`, {
-    event: GATE_EVENT,
-    timeout: GATE_TIMEOUT,
-    if: 'async.data.jobId == event.data.jobId',
-  });
-  return gateResolution(ev as { data?: { decision?: unknown } } | null);
-}
 
 // Invoke Lambda by signed-spec pointer, poll to completion, return the output URL
 // + accrued render cost. framesPerLambda caps chunk concurrency under the AWS
