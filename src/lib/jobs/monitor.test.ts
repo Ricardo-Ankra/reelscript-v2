@@ -55,3 +55,18 @@ test('isRetryable: only failed/cancelled script_generation', () => {
     assert.equal(isRetryable(t, 'cancelled'), false);
   }
 });
+
+import { isAwaitingPreview, gatePhaseLabel } from './monitor.ts';
+
+test('isAwaitingPreview: true only for paused + preview phase', () => {
+  assert.equal(isAwaitingPreview({ status: 'paused', phase: 'awaiting_preview_review' }), true);
+  assert.equal(isAwaitingPreview({ status: 'running', phase: 'awaiting_preview_review' }), false);
+  assert.equal(isAwaitingPreview({ status: 'paused', phase: 'rendering' }), false);
+  assert.equal(isAwaitingPreview({ status: 'paused', phase: null }), false);
+});
+
+test('gatePhaseLabel: friendly for the preview gate, passthrough otherwise', () => {
+  assert.equal(gatePhaseLabel('awaiting_preview_review'), 'Awaiting preview review');
+  assert.equal(gatePhaseLabel('rendering'), 'rendering');
+  assert.equal(gatePhaseLabel(null), '');
+});
