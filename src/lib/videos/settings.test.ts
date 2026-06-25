@@ -90,3 +90,17 @@ test('parseVideoSettings round-trips a stored color_look', () => {
   // invalid stored value falls back to the default
   assert.equal(parseVideoSettings({ color_look: 'nope' }).color_look, 'neutral');
 });
+
+test('preview_gate default is false', () => {
+  assert.equal(SETTINGS_DEFAULTS.preview_gate, false);
+  assert.equal(parseVideoSettings({}).preview_gate, false);
+});
+
+test('sanitizeSettingsPatch keeps a boolean preview_gate, drops non-boolean', () => {
+  assert.equal(sanitizeSettingsPatch({ preview_gate: true }).preview_gate, true);
+  assert.equal('preview_gate' in sanitizeSettingsPatch({ preview_gate: 'yes' }), false);
+});
+
+test('parseVideoSettings round-trips preview_gate', () => {
+  assert.equal(parseVideoSettings({ preview_gate: true }).preview_gate, true);
+});

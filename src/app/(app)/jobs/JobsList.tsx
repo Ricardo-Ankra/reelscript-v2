@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { partitionJobs, jobStatusLabel, isCancellable, isRetryable, type JobRow } from '@/lib/jobs/monitor';
+import { partitionJobs, jobStatusLabel, isCancellable, isRetryable, isAwaitingPreview, gatePhaseLabel, type JobRow } from '@/lib/jobs/monitor';
 import { cancelJob, loadJobs } from './actions';
 import { retryGeneration } from '../videos/[id]/regenerate-actions';
 import { parseRenderError } from '@/lib/errors/render-error';
@@ -115,7 +115,7 @@ function JobItem({
   onCancel?: () => void;
   onRetry?: () => void;
 }) {
-  const phase = job.phase ? ` · ${job.phase}` : '';
+  const phase = job.phase ? ` · ${gatePhaseLabel(job.phase)}` : '';
   const showError = job.status !== 'cancelled' && job.error != null;
   return (
     <li className="space-y-2 px-4 py-3 text-sm">
@@ -153,6 +153,14 @@ function JobItem({
           >
             {busy ? 'Retrying…' : 'Retry'}
           </button>
+        )}
+        {isAwaitingPreview(job) && job.videoId && (
+          <Link
+            href={`/videos/${job.videoId}`}
+            className="shrink-0 rounded-md border border-black/15 px-2.5 py-1 text-xs font-medium enabled:hover:bg-black/[0.04] dark:border-white/20 dark:hover:bg-white/[0.06]"
+          >
+            Review
+          </Link>
         )}
       </div>
       {showError && <RenderErrorCard error={parseRenderError(job.error)} />}

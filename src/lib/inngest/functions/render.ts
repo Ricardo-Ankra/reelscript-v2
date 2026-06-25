@@ -49,6 +49,7 @@ import type { TtsAlignment } from '@/lib/voice/alignment';
 import { loadComposeRegistry } from '@/lib/primitives/registry-load';
 import { stripEmotionTags } from '@/lib/voice/profile';
 import { resolveProviderKey } from '@/lib/credentials/store';
+import { GATE_EVENT, GATE_TIMEOUT, GATE_PHASE, gateResolution, type GateKind, type GateDecision } from '@/lib/gates/gate';
 
 // =============================================================================
 // Phase 4 — the render pipeline (spec 13.1). One function: compose → gate1 →
@@ -363,6 +364,31 @@ export const renderVideo = inngest.createFunction(
         const segments = chunksToSegments(composed.fullCaptionChunks);
         await putObject(`captions/${renderId}.srt`, toSrt(segments, fps), 'application/x-subrip');
         await putObject(`captions/${renderId}.vtt`, toVtt(segments, fps), 'text/vtt');
+      });
+    }
+
+    // --- G2 preview gate (V2 Slice 4) — opt-in human approval of the graded base ------
+    // Off by default ⇒ this whole block is skipped ⇒ byte-identical to today. On ⇒ the
+    // job pauses (status='paused', phase='awaiting_preview_review') until the operator
+    // approves (continue to music/finalize) or rejects (terminate, recoverable).
+    const previewGate = await step.run('resolve-preview-gate', async () => {
+      const { data: v } = await admin.from('videos').select('settings').eq('id', videoId).single();
+      return parseVideoSettings(v?.settings).preview_gate;
+    });
+    if (previewGate) {
+      const decision = await runGate(step, admin, { jobId, kind: 'preview' });
+      if (decision === 'reject') {
+        await step.run('reject-preview', async () => {
+          const error = { phase: 'preview_gate', message: 'Preview rejected by operator' };
+          await admin.from('renders').update({ status: 'failed', error }).eq('id', renderId);
+          await admin.from('jobs').update({ status: 'failed', phase: 'failed', error }).eq('id', jobId);
+        });
+        return { renderId, failed: 'preview_gate' as const };
+      }
+      await step.run('resume-after-preview', async () => {
+        // Clear the paused state (rendering already finished); the music/finalize branch
+        // sets the next phase. A non-terminal 'encoding' holding label, no new enum value.
+        await admin.from('jobs').update({ status: 'running', phase: 'encoding' }).eq('id', jobId);
       });
     }
 
@@ -950,6 +976,23 @@ type SpineParams = {
   functionName: string;
   framesPerLambda?: number;
 };
+
+// Human gate (V2 Slice 4): pause the job durably, then suspend the run waiting for the
+// in-app Approve/Reject event (correlated on jobId — the same key cancelOn uses, so a
+// jobs/cancel still cancels a run suspended here). A timeout/malformed event → reject.
+// `step` is `any` to match runLambdaSpine (Inngest's step types are awkward to thread).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runGate(step: any, admin: ReturnType<typeof createAdminClient>, opts: { jobId: string; kind: GateKind }): Promise<GateDecision> {
+  await step.run(`enter-gate-${opts.kind}`, async () => {
+    await admin.from('jobs').update({ status: 'paused', phase: GATE_PHASE[opts.kind] }).eq('id', opts.jobId);
+  });
+  const ev = await step.waitForEvent(`human-gate-${opts.kind}`, {
+    event: GATE_EVENT,
+    timeout: GATE_TIMEOUT,
+    if: 'async.data.jobId == event.data.jobId',
+  });
+  return gateResolution(ev as { data?: { decision?: unknown } } | null);
+}
 
 // Invoke Lambda by signed-spec pointer, poll to completion, return the output URL
 // + accrued render cost. framesPerLambda caps chunk concurrency under the AWS

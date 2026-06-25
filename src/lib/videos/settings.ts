@@ -15,6 +15,7 @@ export interface VideoSettingsPatch {
   aspect_ratio?: AspectRatio;
   fps?: Fps;
   color_look?: ColorLook;
+  preview_gate?: boolean;
   // target_length intentionally not patchable in this slice
 }
 
@@ -25,6 +26,7 @@ export interface VideoSettings {
   aspect_ratio: AspectRatio;
   fps: Fps;
   color_look: ColorLook;
+  preview_gate: boolean;
   target_length: number; // read-only in this slice
 }
 
@@ -35,6 +37,7 @@ export const SETTINGS_DEFAULTS: VideoSettings = {
   aspect_ratio: '9:16',
   fps: 30,
   color_look: DEFAULT_COLOR_LOOK,
+  preview_gate: false,
   target_length: 30,
 };
 
@@ -49,6 +52,7 @@ export function sanitizeSettingsPatch(patch: unknown): VideoSettingsPatch {
   const p = patch as Record<string, unknown>;
   if (typeof p.captions_on === 'boolean') out.captions_on = p.captions_on;
   if (typeof p.music_on === 'boolean') out.music_on = p.music_on;
+  if (typeof p.preview_gate === 'boolean') out.preview_gate = p.preview_gate;
   if (DENSITIES.includes(p.caption_emphasis_density as CaptionEmphasisDensity)) {
     out.caption_emphasis_density = p.caption_emphasis_density as CaptionEmphasisDensity;
   }

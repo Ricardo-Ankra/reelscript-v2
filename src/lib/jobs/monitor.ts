@@ -1,6 +1,8 @@
 // Pure helpers for the jobs monitor (Phase 8). No react/server/network. Shared by
 // the /jobs page, the cancel action, and the navbar badge.
 
+import { GATE_PHASE } from '../gates/gate';
+
 export type JobStatus = 'queued' | 'running' | 'paused' | 'failed' | 'complete' | 'cancelled';
 
 // The statuses that mean "in flight" — the ones that can be cancelled and that
@@ -28,6 +30,21 @@ const LABELS: Record<string, string> = {
 
 export function jobStatusLabel(status: string): string {
   return LABELS[status] ?? status;
+}
+
+// A render job suspended at the preview gate (state lives on the job — Slice 4).
+export function isAwaitingPreview(job: { status: string; phase: string | null }): boolean {
+  return job.status === 'paused' && job.phase === GATE_PHASE.preview;
+}
+
+// Friendly label for a gate phase; falls through to the raw phase (or '' for null).
+const GATE_PHASE_LABELS: Record<string, string> = {
+  [GATE_PHASE.preview]: 'Awaiting preview review',
+  [GATE_PHASE.storyboard]: 'Awaiting storyboard review',
+};
+export function gatePhaseLabel(phase: string | null): string {
+  if (!phase) return '';
+  return GATE_PHASE_LABELS[phase] ?? phase;
 }
 
 export interface JobRow {
