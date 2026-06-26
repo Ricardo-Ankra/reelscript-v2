@@ -26,7 +26,8 @@ Env var values come from `docs/deploy/env-inventory.md`.
   1. In Vercel, open your project → **Integrations** tab (or visit the
      [Vercel Marketplace](https://vercel.com/integrations) and search "Inngest").
   2. Click **Add Integration** next to Inngest. Select a billing plan (the Pro plan starts at
-     $75/month; a free tier is available for testing).
+     $75/month; a free tier is available for testing). The free tier is sufficient for the F6/F7/F8
+     validation runs; upgrade to Pro before high-volume production use.
   3. Give the integration a name, then select the Vercel project to connect.
   4. Authorize the integration. Vercel will write `INNGEST_SIGNING_KEY` and `INNGEST_EVENT_KEY`
      into the project's environment variables automatically.
@@ -46,11 +47,11 @@ Env var values come from `docs/deploy/env-inventory.md`.
   1. In [Inngest Cloud](https://app.inngest.com), select the **Production** environment from the
      environment selector.
   2. Navigate to the **Apps** page (sidebar).
-  3. If no app exists yet, click **Sync New App**. If your app is already listed, open it and
-     click **Resync** (top-right corner of the app page).
-  4. Paste your app's serve URL — `https://<your-vercel-domain>/api/inngest` — and click
-     **Sync App**.
-  5. Confirm all 9 functions are listed under the app. If functions still don't appear, you can
+  3a. First deploy (no app yet): click **Sync New App**, paste the app URL
+     `https://<your-vercel-domain>/api/inngest`, and click **Sync App**.
+  3b. Re-syncing an existing app (only if the deploy-hook didn't fire): open the app and click
+     **Resync** (top-right of the app page).
+  4. Confirm all 9 functions are listed under the app. If functions still don't appear, you can
      also trigger discovery by sending a PUT request directly:
      ```bash
      curl -X PUT https://<your-vercel-domain>/api/inngest --fail-with-body
@@ -77,8 +78,9 @@ With `GENERATION_PROVIDER=fake` + fixtures set, run these on the DEPLOYED app:
 - **F6 — G2 preview gate:** render a video with `preview_gate` on. Confirm it pauses after the
   graded base; Approve proceeds to music+finalize; a separate run's Reject terminates. Banner
   appears within ~3s.
-- **F8 — budget block:** set a low monthly cap + enforcement on (`/costs`). Start Auto-produce;
-  confirm it aborts with the budget error before any spend.
+- **F8 — budget block:** set a low monthly cap + enforcement on (`/costs`). Start **Auto-produce**
+  (not the manual Generate Video button — budget gating applies only to the pipeline path). Confirm
+  it aborts with the budget error before any spend.
 
 All three prove Inngest Cloud suspends/resumes/cancels in production (the behavior that drifted
 on the local dev server). Record pass/fail for each.
