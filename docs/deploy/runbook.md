@@ -3,6 +3,15 @@
 Most steps are dashboard actions only the operator can perform. Follow in order.
 Env var values come from `docs/deploy/env-inventory.md`.
 
+> **Set the environment variables BEFORE the first build (Section 2 before the deploy in Section 4).**
+> Connecting the repo in Section 1 triggers an immediate auto-deploy. The two `NEXT_PUBLIC_*`
+> Supabase vars are validated at **build time** (`src/lib/env.ts` parses them eagerly, and Next
+> inlines them into the client bundle) — so a build that runs before they are set fails during
+> "Collecting page data" with `Invalid environment configuration: NEXT_PUBLIC_SUPABASE_URL …`.
+> If the first auto-deploy fails this way, it's expected: finish Section 2, then redeploy
+> (Deployments → the failed build → ⋯ → Redeploy). The server-only vars use lazy getters and do
+> not fail the build, but set them too — they're needed at runtime.
+
 ## 1. Vercel project
 - Create a Vercel project; connect the GitHub repo `reelscript-v2`.
 - Framework preset: Next.js. Confirm the Node version (≥20; Vercel uses its 24 LTS default).
