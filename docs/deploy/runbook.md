@@ -39,9 +39,10 @@ Env var values come from `docs/deploy/env-inventory.md`.
 - Confirm the build succeeds (17/17 routes expected).
 
 ## 5. Sync check
-- In Inngest Cloud, confirm all **9 functions** appear: `reelscript-pipeline`,
-  `renderVideo`, `renderSample`, `generateScript`, `synthesizeVoice`, `musicRemux`,
-  `deployPrimitive`, `generateShots`, `ingestShots`.
+- In Inngest Cloud, confirm all **9 functions** appear (these are the function `id` slugs the
+  dashboard shows, not the JS export names): `reelscript-pipeline`, `render-video`,
+  `render-sample`, `generate-script`, `synthesize-voice`, `music-remux`, `deploy-primitive`,
+  `generate-shots`, `ingest-shots`.
 - If they don't appear after the deploy (auto-sync should fire via the integration), trigger a
   manual sync:
   1. In [Inngest Cloud](https://app.inngest.com), select the **Production** environment from the
