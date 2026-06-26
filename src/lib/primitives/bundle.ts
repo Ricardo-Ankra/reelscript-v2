@@ -2,7 +2,14 @@ import 'server-only';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { deploySite, deleteSite, getOrCreateBucket, renderStillOnLambda, type AwsRegion } from '@remotion/lambda';
+// Lightweight client only (no @remotion/bundler / rspack native binding) so importing
+// this module never loads the heavy native chain — critical on Vercel, where the Inngest
+// serve route eagerly imports every function (incl. deployPrimitive → this file) and the
+// full @remotion/lambda's transitive @rspack/binding can't resolve in the serverless runtime.
+// deploySite/deleteSite/getOrCreateBucket (which DO need the bundler) are dynamically
+// imported inside the two bundling functions below — only loaded when primitive authoring
+// actually runs (deferred to a build Lambda in prod, Slice 7b; see OPEN ITEM notes).
+import { renderStillOnLambda, type AwsRegion } from '@remotion/lambda/client';
 import { serverEnv } from '../env.server';
 import type { Theme } from './contract';
 import { frameLooksBlank } from '../ai/vision';
@@ -53,6 +60,8 @@ export async function bundleGateSite(
   await writeFile(path.join(dir, 'Candidate.tsx'), code);
   await writeFile(path.join(dir, 'index.tsx'), harnessEntry(sampleProps, theme));
 
+  // Heavy bundler (@remotion/bundler / rspack) loaded only here, at invocation time.
+  const { getOrCreateBucket, deploySite, deleteSite } = await import('@remotion/lambda');
   const region = serverEnv.aws.region as AwsRegion;
   const { bucketName } = await getOrCreateBucket({ region });
   const siteName = `gate-${id}`;
@@ -129,6 +138,8 @@ export async function deployLiveSite(primitives: { name: string; code: string }[
   const generated = `import type { ComponentType } from 'react';\n${imports}\nexport const DB_PRIMITIVES: Record<string, ComponentType<Record<string, unknown>>> = {\n${entries}\n};\n`;
 
   try {
+    // Heavy bundler (@remotion/bundler / rspack) loaded only here, at invocation time.
+    const { getOrCreateBucket, deploySite } = await import('@remotion/lambda');
     await writeFile(GENERATED, generated);
     const region = serverEnv.aws.region as AwsRegion;
     const { bucketName } = await getOrCreateBucket({ region });
