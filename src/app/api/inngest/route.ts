@@ -14,6 +14,12 @@ import { reelscriptPipeline } from '@/lib/inngest/functions/pipeline';
 // bytes to R2.
 export const runtime = 'nodejs';
 
+// Give the Inngest serve function the full Vercel budget: the longest Vercel-side step
+// is the Anthropic compose call (render + music re-mux run off-Vercel on Lambda). 300s
+// is the current Vercel default; declaring it is explicit + future-proof against default
+// changes. (Slice 7a — production deploy.)
+export const maxDuration = 300;
+
 export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [renderVideo, renderSample, generateScript, synthesizeVoice, musicRemux, deployPrimitive, generateShots, ingestShots, reelscriptPipeline],
