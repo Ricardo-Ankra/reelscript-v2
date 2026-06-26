@@ -32,15 +32,15 @@ Set Category A/B/C/D on Vercel (Production + Preview). Do NOT set Category E on 
 | `INNGEST_SIGNING_KEY` | yes (prod) | Set by the Inngest Vercel integration. |
 | `INNGEST_DEV` | MUST be UNSET in prod | Set `1` only in local `.env.local`. The SDK runs cloud mode only when this is absent. |
 
-## C. Optional (graceful degradation if absent)
+## C. Optional (the deploy succeeds without these; exact behavior varies per var — see notes)
 
 | Variable | Required | Source / notes |
 | --- | --- | --- |
 | `PEXELS_API_KEY` | optional | A channel "has stock" only when set. |
 | `PIXABAY_API_KEY` | optional | As above. |
-| `OPENAI_API_KEY` | optional | Reserved (Phase 4). |
+| `OPENAI_API_KEY` | optional | Reserved (Phase 4); not read anywhere in `src/` yet — setting it has no effect today. |
 | `REMUX_LAMBDA_FUNCTION_NAME` | optional | Defaults to `reelscript-music-remux`. |
-| `CREDENTIALS_ENCRYPTION_KEY` | required only when the per-account credentials vault is used | 64 hex chars (32 bytes). Set it now so the vault works in prod. |
+| `CREDENTIALS_ENCRYPTION_KEY` | only for the credentials vault | 64 hex chars (32 bytes). Read via a `required()` getter (`env.server.ts`), so it THROWS if the per-account credentials vault is exercised without it — but the app otherwise runs on env-var provider keys (the vault save shows a friendly error and resolution falls back to env when absent). Set it now so the vault works in prod. |
 
 ## D. Generation (Slice-8 wiring; for 7a validation ONLY — temporary)
 
