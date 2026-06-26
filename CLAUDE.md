@@ -416,6 +416,52 @@ authoritative and the `docs/` copy remains the design record.
         + enforcement on → run aborts with the budget error; off/high → proceeds as 6a. 4 tasks
         subagent-driven. Spec/plan:
         `docs/superpowers/{specs,plans}/2026-06-25-v2-slice6b-budget-guardrail*`.
+    - **Deferred-backlog roadmap — Slices 7–13 (design 2026-06-25).** With the core program
+      complete through Slice 6, the ~40 remaining deferred items were inventoried and sequenced into
+      a dependency-ordered roadmap (`docs/superpowers/specs/2026-06-25-v2-deferred-roadmap-design.md`).
+      **Two operator decisions set the order:** Vercel deploy is imminent (→ a deploy-readiness slice
+      leads, validated against the fake provider before real spend) and real Higgsfield/image creds
+      are in hand (→ real generation is the critical path right after). **Sequence:** **7** production
+      deploy readiness (7a deploy spine + 7b production primitive bundling) → **8** real generation
+      (+ routed-model billing E1 brought forward) → **9** generation continuity (per-entity seed/
+      reference, first/last-frame chaining, styleRef→gen) → **10** assembly depth (clip-duration
+      probing, sub-range primitives, stock conform, per-shot grade, LUTs) → **11** pipeline automation
+      (auto-voice, full prompt→video, auto-revise, job retry) → **12** production correctness & scale
+      (per-model rates E2, S3→R2 D3, governor D5, render pinning D2, resource-tagging C8, D4
+      polling→webhook) → **13** niceties (Monaco, full tsc gate, voice-seed routing). Each slice gets
+      its own spec→plan→build. F-operator-gates are interleaved checkpoints; G4 thumbnails cancelled;
+      G5 asset-overhaul Slice D **closed as superseded** (generation is `generateShots` keyed on
+      `shot_kind`, not a `render.ts` ladder).
+      - **Slice 7a — production deploy spine (Vercel + Inngest Cloud) (2026-06-26). SHIPPED, merged to
+        main (merge `5b3b549`), 461 tests + build(17/17) green, final Opus review READY TO MERGE.**
+        Additive **deploy-enablement** — the app becomes deployable to Vercel with **Inngest in Cloud
+        mode**, to be validated end-to-end **against the fake generation provider** (no real spend)
+        before Slice 8 turns on money. The code was already structurally cloud-ready (the SDK reads
+        `INNGEST_EVENT_KEY`/`INNGEST_SIGNING_KEY`/`INNGEST_DEV` from env; the serve route registers all
+        9 functions), so the slice is **config + docs**, not app logic. **Three deliverables:** (1)
+        config hardening — `export const maxDuration = 300` on `src/app/api/inngest/route.ts` (next to
+        the untouched `runtime='nodejs'`) + a Node `engines` pin (no `vercel.json` — the route-segment
+        export is idiomatic and dependency-free); (2) `docs/deploy/env-inventory.md` — the complete
+        env-var surface **derived from `env.server.ts`/`env.ts`/`provider-factory.ts`** (Categories A
+        required / B Inngest-SDK / C optional / D generation-fake / E dev-only / F lambda; flags
+        `R2_ACCOUNT_ID` + `SUPABASE_DB_URL` as NOT Vercel-runtime; `CREDENTIALS_ENCRYPTION_KEY` is a
+        lazy `required()` getter — throws only if the credentials vault is exercised without it, else
+        the app runs on env-var keys); (3) `docs/deploy/runbook.md` — the ordered operator deploy +
+        validation runbook (Vercel project → env → **Inngest Vercel integration** → deploy → sync-check
+        of the 9 **function-id slugs** → smoke → caveats → F6/F7/F8 validation on the deployed app),
+        click-paths sourced from current Inngest docs. **Locked:** **D4 (Lambda-completion polling →
+        `waitForEvent` webhook) DEFERRED to Slice 12** — the polling is durable-safe on Vercel
+        (`step.sleep` suspends + Inngest re-invokes), just more invocations; the webhook is an
+        efficiency optimization, not a deploy blocker. **Caveats baked into the runbook:** production
+        primitive authoring is **broken on Vercel until 7b** (the bundler writes the read-only repo
+        tree — author locally + deploy the baked bundle meanwhile); the Remotion site stays on S3 (D3
+        deferred — render works from Vercel via `REMOTION_SERVE_URL`); remove the `GEN_FAKE_*` vars +
+        flip `GENERATION_PROVIDER` when Slice 8 lands. **No app-logic change → no new tests** (461
+        unchanged); 3 tasks subagent-driven (2 minor review fixes folded: precise
+        `CREDENTIALS_ENCRYPTION_KEY` wording, F8-is-pipeline-only; final-review fix: runbook lists
+        Inngest **id slugs** not JS export names). **The slice's TRUE acceptance is operator-run** —
+        the live Vercel + Inngest Cloud deploy and the F6/F7/F8 gate runs on it — and cannot be
+        automated. Spec/plan: `docs/superpowers/{specs,plans}/2026-06-26-v2-slice7a-deploy-spine*`.
   - **Frontend navigation & creation-flow overhaul (2026-06-21):** **Home (`/`) is now
     the channels surface** (channel cards + inline create; `/dashboard` and `/channels`
     redirect to `/`; "Channels" nav link dropped; `PromptBox` deleted). The **channel
