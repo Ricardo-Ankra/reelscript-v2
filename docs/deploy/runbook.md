@@ -94,3 +94,53 @@ With `GENERATION_PROVIDER=fake` + fixtures set, run these on the DEPLOYED app:
 
 All three prove Inngest Cloud suspends/resumes/cancels in production (the behavior that drifted
 on the local dev server). Record pass/fail for each.
+
+## Troubleshooting — real issues hit on the first live deploy (2026-07-03)
+
+Getting the first production deploy + Inngest sync green surfaced a chain of cloud-only issues.
+If any recur (new environment, new project), here's the map. Code fixes are already merged; the
+rest are configuration.
+
+1. **Build fails at "Collecting page data": `NEXT_PUBLIC_SUPABASE_*` undefined.** The two
+   `NEXT_PUBLIC_*` vars are validated at build time (`src/lib/env.ts`, eager zod). Connecting the
+   repo auto-deploys, so the first build runs before env is set. **Fix:** set env vars first (or
+   redeploy after). See the callout at the top of this runbook.
+
+2. **`/api/inngest` returns `307 → /login`.** The Supabase auth middleware was redirecting
+   Inngest's cookie-less calls. **Fixed in code** (`middleware.ts` excludes `/api/inngest`, commit
+   `0b5daeb`). If you see this, the fix regressed.
+
+3. **`/api/inngest` returns `500` (`Cannot find module '@rspack/binding'`).** The serve route
+   eagerly imported the full `@remotion/lambda` → `@remotion/bundler` → native `@rspack/binding`,
+   which can't load in Vercel's serverless runtime. **Fixed in code** (`bundle.ts` imports
+   `@remotion/lambda/client` + lazy-loads the bundler, commit `df87874`). A healthy endpoint
+   returns **`401 {"message":"Unauthorized"}` to an unsigned request — that is EXPECTED**, not an
+   error (Inngest signs its requests; a browser/curl does not).
+
+4. **Sync error "We could not reach your URL."** Vercel **Deployment Protection** blocks Inngest.
+   The deploy-hook auto-sync hits the *deployment-specific* URL (protected even when the production
+   alias is public). **Fix:** either add Vercel's "Protection Bypass for Automation" secret to the
+   integration's **Deployment protection key** field, OR **Settings → Deployment Protection →
+   Vercel Authentication → Disabled**. (A manual "Sync New App" against the *production alias*
+   `https://<domain>/api/inngest` sidesteps it — the alias is public.)
+
+5. **Sync error `account_mismatch`** (but Inngest reached the app: SDK version shows). The
+   deployed app's `INNGEST_SIGNING_KEY` belongs to a **different Inngest account** than the one
+   initiating the sync. Root cause here: **two Inngest integrations / two accounts installed.**
+   **Fix — collapse to ONE:** remove BOTH integrations, delete every `INNGEST_SIGNING_KEY` +
+   `INNGEST_EVENT_KEY` row (all scopes) in Vercel, reinstall exactly ONE integration/account,
+   re-add the protection bypass, **redeploy**, then sync from that one account. With a single
+   account there is no second account to mismatch against.
+
+6. **Env changes don't take effect.** Vercel bakes env vars **at build time** — after changing a
+   key (or after the integration re-pushes keys), you MUST **redeploy** for the running function to
+   see them. A stale build carries the old key. Check **Deployments → the new build is "Current"**.
+
+7. **Key must match the environment scope + the syncing account.** `INNGEST_SIGNING_KEY` (Production
+   scope) must equal the signing key of the exact Inngest **account + environment** you sync from
+   (`signkey-prod-…` for Production). Reveal it per-scope; watch for a leftover Production-scoped
+   value from a removed account.
+
+**The green state:** one Inngest integration/account, its `signkey-prod-…` + event key in Vercel
+(Production), Deployment Protection bypassed (or off), a fresh build that's Current, and the app
+synced showing all 9 functions. `401` to an unsigned probe is healthy.
